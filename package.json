@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.0.0-preview.20",
+  "version": "1.0.0",
   "unity": "2019.4",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -19,17 +19,17 @@
     ]
   },
   "upm": {
-    "changelog": ""
+    "changelog": "* Supported version release"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.0.0-preview.20"
+    "com.unity.services.wire.tests": "1.0.0"
   },
   "upmCi": {
-    "footprint": "d296e1ac139b135eb5edbacd21050f845b235abb"
+    "footprint": "36e64613853b39f038ce24eab17a58e6a82a86c8"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "8b04d0eec56d3e65d669918a58bc3680064dca2a"
+    "revision": "2edacff4f2e62638892922b9a71f7027dbee0828"
   }
 }

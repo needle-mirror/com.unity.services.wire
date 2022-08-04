@@ -36,8 +36,10 @@ namespace Unity.Services.Wire.Internal
 
         private bool m_WebsocketInitialized = false;
 
+        bool m_WantConnected = false;
+
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
-            IUnityThreadUtils threadUtils)
+                      IUnityThreadUtils threadUtils)
         {
             m_ThreadUtils = threadUtils;
             m_Config = config;
@@ -72,6 +74,7 @@ namespace Unity.Services.Wire.Internal
                 sub.Value.Dispose();
             }
         }
+
 #endif
 
         async Task<Reply> SendCommandAsync(UInt32 id, Message command)
@@ -160,6 +163,7 @@ namespace Unity.Services.Wire.Internal
 
         internal void Disconnect()
         {
+            m_WantConnected = false;
             if (m_WebsocketClient != null)
             {
                 ChangeConnectionState(ConnectionState.Disconnecting);
@@ -173,6 +177,7 @@ namespace Unity.Services.Wire.Internal
 
         public async Task ConnectAsync()
         {
+            m_WantConnected = true;
             Logger.LogVerbose("Connection initiated. Checking state prior to connection.");
             while (m_ConnectionState == ConnectionState.Disconnecting)
             {
@@ -224,7 +229,7 @@ namespace Unity.Services.Wire.Internal
             }
 
             //  Add OnOpen event listener
-            m_WebsocketClient.OnOpen += async () =>
+            m_WebsocketClient.OnOpen += async() =>
             {
                 Logger.Log($"Websocket connected to : {m_Config.address}. Initiating Wire handshake.");
                 var subscriptionRequests = await SubscribeRequest.getRequestFromRepo(SubscriptionRepository);
@@ -246,7 +251,7 @@ namespace Unity.Services.Wire.Internal
                 catch (Exception exception)
                 {
                     // Unknown exception caught during connection
-                    m_ConnectionCompletionSource.SetException(exception);
+                    m_ConnectionCompletionSource.TrySetException(exception);
                     m_WebsocketClient.Close();
                     return;
                 }
@@ -299,7 +304,7 @@ namespace Unity.Services.Wire.Internal
             };
 
             // Add OnClose event listener
-            m_WebsocketClient.OnClose += async (WebSocketCloseCode originalcode) =>
+            m_WebsocketClient.OnClose += async(WebSocketCloseCode originalcode) =>
             {
                 var code = (CentrifugeCloseCode)originalcode;
                 Logger.Log("Websocket closed with code: " + code);
@@ -311,12 +316,12 @@ namespace Unity.Services.Wire.Internal
                     m_DisconnectionCompletionSource = null;
                 }
 
-                if (ShouldReconnect(code))
+                if (m_WantConnected && ShouldReconnect(code))
                 {
                     var secondsUntilNextAttempt = m_Backoff.GetNext();
                     Logger.LogVerbose($"Retrying websocket connection in : {secondsUntilNextAttempt} s");
                     await Task.Delay(TimeSpan.FromSeconds(secondsUntilNextAttempt));
-                    await m_ThreadUtils.PostAsync(async () => { await ConnectAsync(); });
+                    await m_ThreadUtils.PostAsync(async() => { await ConnectAsync(); });
                 }
             };
         }
@@ -325,24 +330,25 @@ namespace Unity.Services.Wire.Internal
         {
             switch (code)
             {
-                case CentrifugeCloseCode.WebsocketNotSet:
-                case CentrifugeCloseCode.WebsocketNormal:
-                case CentrifugeCloseCode.WebsocketAway:
+                // irrecoverable error codes
                 case CentrifugeCloseCode.WebsocketUnsupportedData:
                 case CentrifugeCloseCode.WebsocketMandatoryExtension:
-                case CentrifugeCloseCode.Normal:
                 case CentrifugeCloseCode.InvalidToken:
                 case CentrifugeCloseCode.ForceNoReconnect:
                     return false;
+                case CentrifugeCloseCode.WebsocketNotSet:
+                case CentrifugeCloseCode.WebsocketNormal:
+                case CentrifugeCloseCode.WebsocketAway:
                 case CentrifugeCloseCode.WebsocketProtocolError:
-                case CentrifugeCloseCode.WebsocketAbnormal:
                 case CentrifugeCloseCode.WebsocketUndefined:
                 case CentrifugeCloseCode.WebsocketNoStatus:
+                case CentrifugeCloseCode.WebsocketAbnormal:
                 case CentrifugeCloseCode.WebsocketInvalidData:
                 case CentrifugeCloseCode.WebsocketPolicyViolation:
                 case CentrifugeCloseCode.WebsocketTooBig:
                 case CentrifugeCloseCode.WebsocketServerError:
                 case CentrifugeCloseCode.WebsocketTlsHandshakeFailure:
+                case CentrifugeCloseCode.Normal:
                 case CentrifugeCloseCode.Shutdown:
                 case CentrifugeCloseCode.BadRequest:
                 case CentrifugeCloseCode.InternalServerError:
@@ -362,7 +368,7 @@ namespace Unity.Services.Wire.Internal
 
         void ChangeConnectionState(ConnectionState state)
         {
-            var tags = new Dictionary<string, string> {{"state", state.ToString()},};
+            var tags = new Dictionary<string, string> {{"state", state.ToString()}, };
             m_Metrics.SendSumMetric("connection_state_change", 1, tags);
             m_ConnectionState = state;
             switch (state)
@@ -501,7 +507,7 @@ namespace Unity.Services.Wire.Internal
         public IChannel CreateChannel(IChannelTokenProvider tokenProvider)
         {
             var subscription = new Subscription(tokenProvider, m_ThreadUtils);
-            subscription.UnsubscribeReceived += async (TaskCompletionSource<bool> completionSource) =>
+            subscription.UnsubscribeReceived += async(TaskCompletionSource<bool> completionSource) =>
             {
                 try
                 {
@@ -523,7 +529,7 @@ namespace Unity.Services.Wire.Internal
                     completionSource.SetException(e);
                 }
             };
-            subscription.SubscribeReceived += async (TaskCompletionSource<bool> completionSource) =>
+            subscription.SubscribeReceived += async(TaskCompletionSource<bool> completionSource) =>
             {
                 try
                 {
@@ -553,7 +559,7 @@ namespace Unity.Services.Wire.Internal
                 throw new AlreadyUnsubscribedException(subscription.Channel);
             }
 
-            var request = new UnsubscribeRequest {channel = subscription.Channel,};
+            var request = new UnsubscribeRequest {channel = subscription.Channel, };
 
             var command = new Command<UnsubscribeRequest>(Message.Method.UNSUBSCRIBE, request);
             await SendCommandAsync(command.id, command);

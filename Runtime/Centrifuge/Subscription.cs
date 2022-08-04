@@ -1,8 +1,9 @@
 using System;
+using System.Text;
 using System.Threading.Tasks;
+
 using Unity.Services.Core;
 using Unity.Services.Core.Threading.Internal;
-using UnityEngine;
 
 namespace Unity.Services.Wire.Internal
 {
@@ -32,6 +33,8 @@ namespace Unity.Services.Wire.Internal
         readonly IUnityThreadUtils m_ThreadUtils;
 
         private bool m_Disposed;
+
+        string ChannelDisplay => string.IsNullOrEmpty(Channel) ? "unknown" : Channel;
 
         public Subscription(IChannelTokenProvider tokenProvider, IUnityThreadUtils threadUtils)
         {
@@ -94,6 +97,7 @@ namespace Unity.Services.Wire.Internal
                         try
                         {
                             MessageReceived?.Invoke(publication.data.payload);
+                            BinaryMessageReceived?.Invoke(Encoding.UTF8.GetBytes(publication.data.payload));
                         }
                         finally
                         {
@@ -191,7 +195,11 @@ namespace Unity.Services.Wire.Internal
 
         public Task SubscribeAsync()
         {
-            Logger.LogVerbose($"Subscribing to {(String.IsNullOrEmpty(Channel) ? "unknown" : Channel)}");
+            if (m_Disposed)
+            {
+                throw new ObjectDisposedException(ChannelDisplay);
+            }
+            Logger.LogVerbose($"Subscribing to {ChannelDisplay}");
             SubscriptionState = SubscriptionState.Subscribing;
             NewStateReceived?.Invoke(SubscriptionState);
             var completionSource = new TaskCompletionSource<bool>();
@@ -201,7 +209,11 @@ namespace Unity.Services.Wire.Internal
 
         public Task UnsubscribeAsync()
         {
-            Logger.LogVerbose($"Unsubscribing from {(String.IsNullOrEmpty(Channel) ? "unknown" : Channel)}");
+            if (m_Disposed)
+            {
+                throw new ObjectDisposedException(ChannelDisplay);
+            }
+            Logger.LogVerbose($"Unsubscribing from {ChannelDisplay}");
             var completionSource = new TaskCompletionSource<bool>();
             UnsubscribeReceived?.Invoke(completionSource);
             return completionSource.Task;

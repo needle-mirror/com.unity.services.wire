@@ -4,9 +4,14 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2022-10-05
+### Changed
+* Fixed a situation where the network thread would access an object being owned by the main thread.
+* Add a 10s retry time upon custom Wire close code
+
 ## [1.1.0] - 2022-08-04
 ### Changed
-  * Dependency version bump for core and auth package
+* Dependency version bump for core and auth package
 
 ## [1.0.1] - 2022-05-25
 ### Changed

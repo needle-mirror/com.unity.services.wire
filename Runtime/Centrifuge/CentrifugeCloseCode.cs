@@ -160,6 +160,12 @@ namespace Unity.Services.Wire.Internal
         /// <summary>
         /// can be sent when client connection exceeds configured channel limit.
         /// </summary>
-        ChannelLimit = 3014
+        ChannelLimit = 3014,
+
+        // <summary>
+        // Wire custom close code.
+        // The server could not approve the token, retry in 10s.
+        // </summary>
+        // TokenVerificationFailed = 4333
     }
 }

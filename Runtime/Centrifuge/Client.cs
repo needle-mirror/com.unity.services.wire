@@ -11,7 +11,7 @@ namespace Unity.Services.Wire.Internal
 {
     class Client : IWire
     {
-        enum ConnectionState
+        internal enum ConnectionState
         {
             Disconnected,
             Connected,
@@ -23,18 +23,18 @@ namespace Unity.Services.Wire.Internal
 
         TaskCompletionSource<ConnectionState> m_ConnectionCompletionSource;
         TaskCompletionSource<ConnectionState> m_DisconnectionCompletionSource;
-        ConnectionState m_ConnectionState = ConnectionState.Disconnected;
+        internal ConnectionState m_ConnectionState = ConnectionState.Disconnected;
         CancellationTokenSource m_PingCancellationSource;
         Task<bool> m_PingTask;
         IWebSocket m_WebsocketClient;
 
-        readonly IBackoffStrategy m_Backoff;
+        internal IBackoffStrategy m_Backoff;
         readonly CommandManager m_CommandManager;
         readonly Configuration m_Config;
         readonly IMetrics m_Metrics;
         readonly IUnityThreadUtils m_ThreadUtils;
 
-        private bool m_WebsocketInitialized = false;
+        bool m_WebsocketInitialized = false;
 
         bool m_WantConnected = false;
 
@@ -203,10 +203,7 @@ namespace Unity.Services.Wire.Internal
             ChangeConnectionState(ConnectionState.Connecting);
 
             // initialize websocket object
-            if (!m_WebsocketInitialized)
-            {
-                InitWebsocket();
-            }
+            InitWebsocket();
 
             // Connect to the websocket server
             Logger.Log($"Attempting connection on: {m_Config.address}");
@@ -214,22 +211,9 @@ namespace Unity.Services.Wire.Internal
             await m_ConnectionCompletionSource.Task;
         }
 
-        private void InitWebsocket()
+        void OnWebsocketOpen()
         {
-            Logger.LogVerbose("Initializing Websocket.");
-            m_WebsocketInitialized = true;
-            // use the eventual websocket override instead of the default one
-            if (m_Config.WebSocket != null)
-            {
-                m_WebsocketClient = m_Config.WebSocket;
-            }
-            else
-            {
-                m_WebsocketClient = WebSocketFactory.CreateInstance(m_Config.address);
-            }
-
-            //  Add OnOpen event listener
-            m_WebsocketClient.OnOpen += async() =>
+            m_ThreadUtils.PostAsync(async() =>
             {
                 Logger.Log($"Websocket connected to : {m_Config.address}. Initiating Wire handshake.");
                 var subscriptionRequests = await SubscribeRequest.getRequestFromRepo(SubscriptionRepository);
@@ -244,7 +228,8 @@ namespace Unity.Services.Wire.Internal
                 {
                     // Wire handshake failed
                     m_ConnectionCompletionSource.SetException(
-                        new ConnectionFailedException($"Socket closed during connection attempt: {exception.m_Code}"));
+                        new ConnectionFailedException(
+                            $"Socket closed during connection attempt: {exception.m_Code}"));
                     m_WebsocketClient.Close();
                     return;
                 }
@@ -259,10 +244,12 @@ namespace Unity.Services.Wire.Internal
                 m_Backoff.Reset();
                 SubscriptionRepository.RecoverSubscriptions(reply);
                 ChangeConnectionState(ConnectionState.Connected);
-            };
+            });
+        }
 
-            // Add OnMessage event listener
-            m_WebsocketClient.OnMessage += (byte[] payload) =>
+        void OnWebsocketMessage(byte[] payload)
+        {
+            m_ThreadUtils.PostAsync(() =>
             {
                 try
                 {
@@ -293,23 +280,28 @@ namespace Unity.Services.Wire.Internal
                     Logger.LogException(e);
                     // TODO: try and find a way of reporting this exception
                 }
-            };
+            });
+        }
 
-            // Add OnError event listener
-            m_WebsocketClient.OnError += (string errMsg) =>
+        void OnWebsocketError(string msg)
+        {
+            m_ThreadUtils.PostAsync(() =>
             {
                 m_Metrics.SendSumMetric("websocket_error", 1);
-                Logger.LogError("Websocket connection error: " + errMsg);
+                Logger.LogError($"Websocket connection error: {msg}");
                 // TODO: try and find a way of reporting this error
-            };
+            });
+        }
 
-            // Add OnClose event listener
-            m_WebsocketClient.OnClose += async(WebSocketCloseCode originalcode) =>
+        void OnWebsocketClose(WebSocketCloseCode originalCode)
+        {
+            m_ThreadUtils.PostAsync(async() =>
             {
-                var code = (CentrifugeCloseCode)originalcode;
+                var code = (CentrifugeCloseCode)originalCode;
                 Logger.Log("Websocket closed with code: " + code);
                 ChangeConnectionState(ConnectionState.Disconnected);
-                m_CommandManager.OnDisconnect(new CommandInterruptedException($"websocket disconnected: {code}", code));
+                m_CommandManager.OnDisconnect(new CommandInterruptedException($"websocket disconnected: {code}",
+                    code));
                 if (m_DisconnectionCompletionSource != null)
                 {
                     m_DisconnectionCompletionSource.SetResult(ConnectionState.Disconnected);
@@ -318,12 +310,40 @@ namespace Unity.Services.Wire.Internal
 
                 if (m_WantConnected && ShouldReconnect(code))
                 {
-                    var secondsUntilNextAttempt = m_Backoff.GetNext();
+                    // TokenVerificationFailed is a special Wire custom error that happens when the token verification failed on server side
+                    // to prevent any rate limitation on UAS the server will wait a specified amount of time before retrying therefore it's useless
+                    // to try again too early from the client.
+                    var secondsUntilNextAttempt = (int)originalCode == 4333 ? 10.0f : m_Backoff.GetNext();  // TODO: get rid of the cast when the close code gets public
                     Logger.LogVerbose($"Retrying websocket connection in : {secondsUntilNextAttempt} s");
                     await Task.Delay(TimeSpan.FromSeconds(secondsUntilNextAttempt));
                     await m_ThreadUtils.PostAsync(async() => { await ConnectAsync(); });
                 }
-            };
+            });
+        }
+
+        private void InitWebsocket()
+        {
+            Logger.LogVerbose("Initializing Websocket.");
+            if (m_WebsocketInitialized)
+            {
+                return;
+            }
+            m_WebsocketInitialized = true;
+
+            // use the eventual websocket override instead of the default one
+            m_WebsocketClient = m_Config.WebSocket ?? WebSocketFactory.CreateInstance(m_Config.address);
+
+            //  Add OnOpen event listener
+            m_WebsocketClient.OnOpen += OnWebsocketOpen;
+
+            // Add OnMessage event listener
+            m_WebsocketClient.OnMessage += OnWebsocketMessage;
+
+            // Add OnError event listener
+            m_WebsocketClient.OnError += OnWebsocketError;
+
+            // Add OnClose event listener
+            m_WebsocketClient.OnClose += OnWebsocketClose;
         }
 
         private bool ShouldReconnect(CentrifugeCloseCode code)
@@ -361,6 +381,7 @@ namespace Unity.Services.Wire.Internal
                 case CentrifugeCloseCode.ForceReconnect:
                 case CentrifugeCloseCode.ConnectionLimit:
                 case CentrifugeCloseCode.ChannelLimit:
+                // case CentrifugeCloseCode.TokenVerificationFailed:
                 default:
                     return true;
             }

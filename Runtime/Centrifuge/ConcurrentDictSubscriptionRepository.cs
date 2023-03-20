@@ -20,6 +20,8 @@ namespace Unity.Services.Wire.Internal
         void OnSocketClosed();
         void RecoverSubscriptions(Reply reply);
         bool IsEmpty { get; }
+
+        void Clear();
     }
 
     class ConcurrentDictSubscriptionRepository : ISubscriptionRepository
@@ -33,6 +35,11 @@ namespace Unity.Services.Wire.Internal
         public ConcurrentDictSubscriptionRepository()
         {
             Subscriptions = new ConcurrentDictionary<string, Subscription>();
+        }
+
+        public void Clear()
+        {
+            Subscriptions.Clear();
         }
 
         public bool IsAlreadySubscribed(string alias)

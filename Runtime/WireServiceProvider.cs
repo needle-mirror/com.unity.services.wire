@@ -1,7 +1,8 @@
-using System.Collections.Generic;
+using System;
+using System.ComponentModel;
 using System.Threading.Tasks;
-
 using Unity.Services.Authentication.Internal;
+using Unity.Services.Core.Configuration.Internal;
 using Unity.Services.Core.Internal;
 using Unity.Services.Core.Scheduler.Internal;
 using Unity.Services.Core.Threading.Internal;
@@ -12,6 +13,9 @@ namespace Unity.Services.Wire.Internal
 {
     class WireServiceProvider : IInitializablePackage
     {
+        const string k_CloudEnvironmentKey = "com.unity.services.core.cloud-environment";
+        const string k_StagingEnvironment = "staging";
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Register()
         {
@@ -21,42 +25,120 @@ namespace Unity.Services.Wire.Internal
             // And specify what components it requires, or provides.
             generatedPackageRegistry
                 .DependsOn<IAccessToken>()
+                .DependsOn<IPlayerId>()
                 .DependsOn<IActionScheduler>()
                 .DependsOn<IUnityThreadUtils>()
                 .DependsOn<IMetricsFactory>()
+                .DependsOn<IProjectConfiguration>()
                 .ProvidesComponent<IWire>();
         }
 
-        public Task Initialize(CoreRegistry registry)
+        public async Task Initialize(CoreRegistry registry)
         {
+            if (Application.internetReachability == NetworkReachability.NotReachable)
+            {
+                throw new WarningException("The Wire package cannot initialize on a device that does not have the capacity to connect to the internet.");
+            }
+
+            // threading
             var actionScheduler = registry.GetServiceComponent<IActionScheduler>();
+            if (actionScheduler == null)
+            {
+                throw new MissingComponentException("IActionScheduler component not initialized.");
+            }
             var threadUtils = registry.GetServiceComponent<IUnityThreadUtils>();
+            if (threadUtils == null)
+            {
+                throw new MissingComponentException("IUnityThreadUtils component not initialized.");
+            }
 
             // authentication
             var accessTokenWire = registry.GetServiceComponent<IAccessToken>();
-            if (accessTokenWire != null)
+            if (accessTokenWire == null)
             {
-                // telemetry
-                var metricsFactory = registry.GetServiceComponent<IMetricsFactory>();
-                var metrics = metricsFactory.Create("com.unity.services.wire");
-                metrics.SendSumMetric("wire_init", 1);
-
-                Configuration configuration = new Configuration
-                {
-                    token = accessTokenWire,
-#if WIRE_STAGING
-                    address = "wss://wire-stg.unity3d.com/ws",
-#elif WIRE_TEST
-                    address = "wss://wire-test.unity3d.com/ws",
-#else
-                    address = "wss://wire.unity3d.com/ws",
-#endif
-                };
-                var client = new Client(configuration, actionScheduler, metrics, threadUtils);
-                registry.RegisterServiceComponent<IWire>(client);
-                return Task.CompletedTask;
+                throw new MissingComponentException("IAccessToken component not initialized.");
             }
-            throw new MissingComponentException("IAccessToken component not initialized.");
+            var playerId = registry.GetServiceComponent<IPlayerId>();
+            if (playerId == null)
+            {
+                throw new MissingComponentException("IPlayerId component not initialized.");
+            }
+
+            // telemetry
+            var metricsFactory = registry.GetServiceComponent<IMetricsFactory>();
+            var metrics = metricsFactory.Create("com.unity.services.wire");
+            metrics.SendSumMetric("wire_init", 1);
+
+            // project config
+            var projectCfg = registry.GetServiceComponent<IProjectConfiguration>();
+            if (projectCfg == null)
+            {
+                throw new MissingComponentException("IProjectConfiguration component not initialized.");
+            }
+
+            var client = new Client(GetConfiguration(accessTokenWire, projectCfg), actionScheduler, metrics, threadUtils);
+
+            playerId.PlayerIdChanged += id => threadUtils.Send(async() => {
+                try
+                {
+                    var connect = !string.IsNullOrEmpty(accessTokenWire.AccessToken);
+                    var action = connect ? "reconnect" : "disconnect";
+                    Logger.LogVerbose($"PlayerID changed to [{ id }], next action: { action }");
+                    await client.ResetAsync(connect);
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                }
+            });
+
+            if (!string.IsNullOrEmpty(accessTokenWire.AccessToken))
+            {
+                await client.ResetAsync(true);
+            }
+
+            registry.RegisterServiceComponent<IWire>(client);
+        }
+
+        Configuration GetConfiguration(IAccessToken token, IProjectConfiguration projectCfg)
+        {
+            // for backward compatibility, we still check for build flags
+            // if previous user was using build flags, it will keep working,
+            // but a warning will display so that they know why we selected
+            // the cloud environment.
+
+            var wireAddr = "wss://wire.unity3d.com/ws";
+
+            #if WIRE_STAGING
+
+            Logger.LogWarning("You are switching the cloud environment using the build flags " +
+                "(WIRE_STAGING, WIRE_TEST). Please consider using the project configuration instead.");
+            Logger.Log("Wire will use the STAGING environment.");
+            wireAddr = "wss://wire-stg.unity3d.com/ws";
+
+            #elif WIRE_TEST
+
+            Logger.LogWarning("You are switching the cloud environment using the build flags" +
+                "(WIRE_STAGING, WIRE_TEST). Please consider using the project configuration instead.");
+            Logger.Log("Wire will use the TEST environment.");
+            wireAddr = "wss://wire-test.unity3d.com/ws";
+
+            #else
+
+            var cloudEnvironment = projectCfg?.GetString(k_CloudEnvironmentKey);
+            if (cloudEnvironment == k_StagingEnvironment)
+            {
+                Logger.Log("Wire will use the STAGING environment.");
+                wireAddr = "wss://wire-stg.unity3d.com/ws";
+            }
+
+            #endif
+
+            return new Configuration
+            {
+                token = token,
+                address = wireAddr,
+            };
         }
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core;
 using Unity.Services.Core.Scheduler.Internal;
@@ -19,6 +18,11 @@ namespace Unity.Services.Wire.Internal
             m_Commands = new ConcurrentDictionary<uint, TaskCompletionSource<Reply>> {};
             m_ActionScheduler = actionScheduler;
             Config = configuration;
+        }
+
+        public void Clear()
+        {
+            m_Commands.Clear();
         }
 
         public void RegisterCommand(UInt32 id)

@@ -5,15 +5,14 @@ namespace Unity.XMLDocExample.UnityEditor.SubGroup.YourPackageName
 {
     public class MyPublicEditorExampleClass
     {
-        public Unity.XMLDocExample.UnityEditor.SubGroup.YourPackageName.MyPublicEditorExampleClass.MyExampleEnum propertyExample { get; }
+        public MyPublicEditorExampleClass.MyExampleEnum propertyExample { get; }
         public MyPublicEditorExampleClass() {}
         public int CountThingsAndDoStuff(int parameter1, int parameter2, bool parameter3);
         public enum MyExampleEnum
         {
-            public const Unity.XMLDocExample.UnityEditor.SubGroup.YourPackageName.MyPublicEditorExampleClass.MyExampleEnum First = 0;
-            public const Unity.XMLDocExample.UnityEditor.SubGroup.YourPackageName.MyPublicEditorExampleClass.MyExampleEnum Second = 1;
-            public const Unity.XMLDocExample.UnityEditor.SubGroup.YourPackageName.MyPublicEditorExampleClass.MyExampleEnum Third = 2;
-            public int value__;
+            First = 0,
+            Second = 1,
+            Third = 2,
         }
     }
 }

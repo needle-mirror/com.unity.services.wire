@@ -4,6 +4,20 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2023-03-20
+### Changed
+* Fix: unit tests are now synchronous
+* Fix: threading simplification
+* Fixed an issue that occured when a Subscription was subscribed and unsubscribed to repeatedly.
+
+## [1.1.3] - 2023-03-08
+### Changed
+* Fix: Race condition at package initialization time
+
+## [1.1.2] - 2023-02-15
+### Changed
+* Fix: Wire now tracks when a Authentication changes the current user Id and resets the connection accordingly.
+
 ## [1.1.1] - 2022-10-05
 ### Changed
 * Fixed a situation where the network thread would access an object being owned by the main thread.

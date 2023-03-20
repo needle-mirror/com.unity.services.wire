@@ -90,28 +90,22 @@ namespace Unity.Services.Wire.Internal
 
             if (reply.result?.publications?.Length > 0)
             {
-                m_ThreadUtils.PostAsync(() =>
+                foreach (var publication in reply.result.publications)
                 {
-                    foreach (var publication in reply.result.publications)
+                    try
                     {
-                        try
-                        {
-                            MessageReceived?.Invoke(publication.data.payload);
-                            BinaryMessageReceived?.Invoke(Encoding.UTF8.GetBytes(publication.data.payload));
-                        }
-                        finally
-                        {
-                            Offset = publication.offset;
-                        }
+                        MessageReceived?.Invoke(publication.data.payload);
+                        BinaryMessageReceived?.Invoke(Encoding.UTF8.GetBytes(publication.data.payload));
                     }
-                });
+                    finally
+                    {
+                        Offset = publication.offset;
+                    }
+                }
             }
             else if (reply.result?.data?.data?.payload != null)
             {
-                m_ThreadUtils.PostAsync(() =>
-                {
-                    MessageReceived?.Invoke(reply.result.data.data.payload);
-                });
+                MessageReceived?.Invoke(reply.result.data.data.payload);
                 Offset++;
             }
         }
@@ -126,12 +120,9 @@ namespace Unity.Services.Wire.Internal
         {
             if (KickReceived != null)
             {
-                m_ThreadUtils.PostAsync(() =>
-                {
-                    SubscriptionState = SubscriptionState.Unsubscribed;
-                    NewStateReceived?.Invoke(SubscriptionState);
-                    KickReceived?.Invoke();
-                });
+                SubscriptionState = SubscriptionState.Unsubscribed;
+                NewStateReceived?.Invoke(SubscriptionState);
+                KickReceived?.Invoke();
             }
         }
 
@@ -143,7 +134,7 @@ namespace Unity.Services.Wire.Internal
 
         ~Subscription()
         {
-            Dispose(false);
+            // Do nothing
         }
 
         public void Dispose()

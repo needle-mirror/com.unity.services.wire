@@ -24,7 +24,7 @@ var LibraryWebSocket = {
 
 		/* Event listeners */
 		onOpen: null,
-		onMesssage: null,
+		onMessage: null,
 		onError: null,
 		onClose: null,
 
@@ -128,6 +128,8 @@ var LibraryWebSocket = {
 	WebSocketConnect: function(instanceId) {
 
 		var instance = webSocketState.instances[instanceId];
+		var encoder = new TextEncoder('utf-8');
+
 		if (!instance) return -1;
 
 		if (instance.ws !== null)
@@ -152,8 +154,11 @@ var LibraryWebSocket = {
 			if (webSocketState.debug)
 				console.log("[JSLIB WebSocket] Received message:", ev.data);
 
-			if (webSocketState.onMessage === null)
+			if (webSocketState.onMessage === null){
+				if (webSocketState.debug)
+					console.log("[JSLIB WebSocket] No listener for onMessage, returning");
 				return;
+			}
 
 			if (ev.data instanceof ArrayBuffer) {
 
@@ -166,8 +171,26 @@ var LibraryWebSocket = {
 					Runtime.dynCall('viii', webSocketState.onMessage, [ instanceId, buffer, dataBuffer.length ]);
 				} finally {
 					_free(buffer);
+					return;
 				}
+			}
+			// fix made by Unity (@arnaud.gout)
+			// it seems like the data received in the onmessage callback seems to be of type string instead of ArrayBuffer
+			// let's assume it's a string, if not, we handle in the catch
+			try {
+                var dataBuffer = encoder.encode(ev.data);
 
+                var buffer = _malloc(dataBuffer.length);
+                HEAPU8.set(dataBuffer, buffer);
+
+                try {
+                    Runtime.dynCall('viii', webSocketState.onMessage, [ instanceId, buffer, dataBuffer.length ]);
+                } finally {
+                    _free(buffer);
+                }
+			} catch(e) {
+				console.error("[JSLIB WebSocket] issue while trying to process websocket message (type: " + typeof ev.data 
+					+ ", value: " + ev.data + ", error: " + e + ")");
 			}
 
 		};

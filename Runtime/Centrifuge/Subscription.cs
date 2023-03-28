@@ -23,22 +23,22 @@ namespace Unity.Services.Wire.Internal
         public event Action DisposeReceived;
 
         public string Channel;
-        public bool IsConnected { get => SubscriptionState == SubscriptionState.Synced; }
+        public bool IsConnected => SubscriptionState == SubscriptionState.Synced;
 
         public UInt64 Offset;
         public string Epoch;
-        public SubscriptionState SubscriptionState = SubscriptionState.Unsynced;
+
+        SubscriptionState m_State = SubscriptionState.Unsynced;
+        public SubscriptionState SubscriptionState { get => m_State; private set => SetState(value); }
 
         IChannelTokenProvider m_TokenProvider;
-        readonly IUnityThreadUtils m_ThreadUtils;
 
-        private bool m_Disposed;
+        bool m_Disposed;
 
         string ChannelDisplay => string.IsNullOrEmpty(Channel) ? "unknown" : Channel;
 
-        public Subscription(IChannelTokenProvider tokenProvider, IUnityThreadUtils threadUtils)
+        public Subscription(IChannelTokenProvider tokenProvider)
         {
-            m_ThreadUtils = threadUtils;
             m_TokenProvider = tokenProvider;
             Offset = 0;
             m_Disposed = false;
@@ -60,6 +60,15 @@ namespace Unity.Services.Wire.Internal
             ValidateTokenData(tokenData.ChannelName, tokenData.Token);
             Channel = tokenData.ChannelName;
             return tokenData.Token;
+        }
+
+        internal void SetState(SubscriptionState state)
+        {
+            if (m_State != state)
+            {
+                m_State = state;
+                NewStateReceived?.Invoke(m_State);
+            }
         }
 
         private void ValidateTokenData(string channel, string token)
@@ -113,23 +122,17 @@ namespace Unity.Services.Wire.Internal
         internal void OnUnsubscriptionComplete()
         {
             SubscriptionState = SubscriptionState.Unsubscribed;
-            NewStateReceived?.Invoke(SubscriptionState);
         }
 
         public void OnKickReceived()
         {
-            if (KickReceived != null)
-            {
-                SubscriptionState = SubscriptionState.Unsubscribed;
-                NewStateReceived?.Invoke(SubscriptionState);
-                KickReceived?.Invoke();
-            }
+            SubscriptionState = SubscriptionState.Unsubscribed;
+            KickReceived?.Invoke();
         }
 
         public void OnConnectivityChangeReceived(bool connected)
         {
             SubscriptionState = connected ? SubscriptionState.Synced : SubscriptionState.Unsynced;
-            NewStateReceived?.Invoke(SubscriptionState);
         }
 
         ~Subscription()
@@ -192,7 +195,6 @@ namespace Unity.Services.Wire.Internal
             }
             Logger.LogVerbose($"Subscribing to {ChannelDisplay}");
             SubscriptionState = SubscriptionState.Subscribing;
-            NewStateReceived?.Invoke(SubscriptionState);
             var completionSource = new TaskCompletionSource<bool>();
             SubscribeReceived?.Invoke(completionSource);
             return completionSource.Task;
@@ -213,7 +215,6 @@ namespace Unity.Services.Wire.Internal
         internal void OnError(string reason)
         {
             SubscriptionState = SubscriptionState.Error;
-            NewStateReceived?.Invoke(SubscriptionState);
             ErrorReceived?.Invoke(reason);
         }
     }

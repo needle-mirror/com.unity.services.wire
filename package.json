@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "unity": "2020.3",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -16,17 +16,18 @@
       "iOS",
       "Mac",
       "PC"
-    ]
+    ],
+    "changelog": "### Fixed\n* Prevent the state changed event to fire twice on IChannel objects\n* Fixed issue in the jslib adapter for WebGL build (experimental)"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.1.4"
+    "com.unity.services.wire.tests": "1.1.5"
   },
   "upmCi": {
-    "footprint": "9318a8de5fb3e30b598d384a5db0b47d5236c0ae"
+    "footprint": "8e9e5e90d15d4b8a3fa711781247e6f5fb2dff6b"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "b01bbb3d87730d279bec7cc1679681ba9052b731"
+    "revision": "b1f5076b58ef4327e4cbfcb2c6e65574da4aae3f"
   }
 }

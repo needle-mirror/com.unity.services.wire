@@ -1,6 +1,6 @@
-# Wire Alpha
+# Wire package
 
-This is the Unity SDK for Wire. Wire is currently in Alpha.
+This is the Unity SDK for Wire.
 
 ## Installing Wire
 

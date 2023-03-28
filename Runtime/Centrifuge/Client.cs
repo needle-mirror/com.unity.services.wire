@@ -60,18 +60,25 @@ namespace Unity.Services.Wire.Internal
         }
 
 #if UNITY_EDITOR
-        void PlayModeStateChanged(PlayModeStateChange state)
+        async void PlayModeStateChanged(PlayModeStateChange state)
         {
-            if (state != PlayModeStateChange.ExitingPlayMode)
+            try
             {
-                return;
-            }
-            Logger.Log("Exiting playmode, disconnecting, and cleaning subscription repo.");
-            Disconnect();
+                if (state != PlayModeStateChange.ExitingPlayMode)
+                {
+                    return;
+                }
+                Logger.Log("Exiting playmode, disconnecting, and cleaning subscription repo.");
+                await DisconnectAsync();
 
-            foreach (var sub in SubscriptionRepository.GetAll())
+                foreach (var sub in SubscriptionRepository.GetAll())
+                {
+                    sub.Value.Dispose();
+                }
+            }
+            catch (Exception e)
             {
-                sub.Value.Dispose();
+                Logger.LogException(e);
             }
         }
 
@@ -112,7 +119,7 @@ namespace Unity.Services.Wire.Internal
         {
             if (m_PingCancellationSource != null)
             {
-                throw new Exception("ping cancellation already exists");
+                throw new Exception("[Wire] Unexpected exception: ping cancellation source already exists");
             }
 
             m_PingCancellationSource = new CancellationTokenSource();
@@ -121,7 +128,7 @@ namespace Unity.Services.Wire.Internal
                 Command<PingRequest> command = new Command<PingRequest>(Message.Method.PING, new PingRequest());
                 try
                 {
-                    var res = await SendCommandAsync(command.id, command);
+                    await SendCommandAsync(command.id, command);
                 }
                 catch (CommandInterruptedException)
                 {
@@ -159,18 +166,6 @@ namespace Unity.Services.Wire.Internal
 
             m_WebsocketClient.Close();
             m_PingCancellationSource = null;
-        }
-
-        internal async void Disconnect()
-        {
-            try
-            {
-                await DisconnectAsync();
-            }
-            catch (Exception e)
-            {
-                Logger.LogException(e);
-            }
         }
 
         internal async Task DisconnectAsync()
@@ -552,7 +547,7 @@ namespace Unity.Services.Wire.Internal
 
         public IChannel CreateChannel(IChannelTokenProvider tokenProvider)
         {
-            var subscription = new Subscription(tokenProvider, m_ThreadUtils);
+            var subscription = new Subscription(tokenProvider);
             subscription.UnsubscribeReceived += async(TaskCompletionSource<bool> completionSource) =>
             {
                 try

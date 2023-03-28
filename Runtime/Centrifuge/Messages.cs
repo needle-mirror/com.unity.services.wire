@@ -18,7 +18,7 @@ namespace Unity.Services.Wire.Internal
 
     static class CommandID
     {
-        internal static UInt32 currentId = 0;
+        public static UInt32 currentId { private set; get; }
         public static UInt32 GenerateNewId() => ++ CommandID.currentId;
     }
 

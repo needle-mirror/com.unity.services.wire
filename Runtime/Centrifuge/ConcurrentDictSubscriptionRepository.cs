@@ -58,7 +58,7 @@ namespace Unity.Services.Wire.Internal
             {
                 return false;
             }
-            return Subscriptions.ContainsKey(sub.Channel) && sub.IsConnected == false;
+            return Subscriptions.ContainsKey(sub.Channel) && !sub.IsConnected;
         }
 
         public void OnSubscriptionComplete(Subscription sub, Reply res)

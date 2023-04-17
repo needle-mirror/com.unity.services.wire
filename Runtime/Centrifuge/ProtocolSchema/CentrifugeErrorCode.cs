@@ -1,4 +1,4 @@
-namespace Unity.Services.Wire.Internal
+namespace Unity.Services.Wire.Protocol.Internal
 {
     enum CentrifugeErrorCode : int
     {

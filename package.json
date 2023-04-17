@@ -1,12 +1,12 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "unity": "2020.3",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
     "com.unity.services.core": "1.8.1",
-    "com.unity.nuget.newtonsoft-json": "3.0.2",
+    "com.unity.nuget.newtonsoft-json": "3.1.0",
     "com.unity.services.authentication": "2.4.0"
   },
   "type": "library",
@@ -17,17 +17,17 @@
       "Mac",
       "PC"
     ],
-    "changelog": "### Fixed\n* Prevent the state changed event to fire twice on IChannel objects\n* Fixed issue in the jslib adapter for WebGL build (experimental)"
+    "changelog": "### Fixed\n* improved logging\n* removed error log when unsubscribe arrives on an unsubscribed channel"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.1.5"
+    "com.unity.services.wire.tests": "1.1.6"
   },
   "upmCi": {
-    "footprint": "8e9e5e90d15d4b8a3fa711781247e6f5fb2dff6b"
+    "footprint": "3e5f0c53cf9ab42b8480a3a3cd1eed5bdbb77e1c"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "b1f5076b58ef4327e4cbfcb2c6e65574da4aae3f"
+    "revision": "486025dcbb83ceed477155e5c41b8eab9aa53b28"
   }
 }

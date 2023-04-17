@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Unity.Services.Wire.Protocol.Internal;
 
 namespace Unity.Services.Wire.Internal
 {
@@ -10,7 +11,7 @@ namespace Unity.Services.Wire.Internal
         bool IsAlreadySubscribed(Subscription sub);
         bool IsRecovering(Subscription sub);
 
-        void OnSubscriptionComplete(Subscription sub, Reply res);
+        void OnSubscriptionComplete(Subscription sub, SubscribeResult result);
         Subscription GetSub(Subscription sub);
         Subscription GetSub(string channel);
 
@@ -54,27 +55,24 @@ namespace Unity.Services.Wire.Internal
 
         public bool IsRecovering(Subscription sub)
         {
-            if (String.IsNullOrEmpty(sub.Channel))
+            if (string.IsNullOrEmpty(sub.Channel))
             {
                 return false;
             }
             return Subscriptions.ContainsKey(sub.Channel) && !sub.IsConnected;
         }
 
-        public void OnSubscriptionComplete(Subscription sub, Reply res)
+        public void OnSubscriptionComplete(Subscription sub, SubscribeResult res)
         {
-            if (res.HasError())
-            {
-                Logger.LogError($"An error occured during subscription to {sub.Channel}: {res.error.message}");
-                return;
-            }
-
-            if (res.result.offset != sub.Offset)
+            if (res.offset != sub.Offset)
             {
                 try
                 {
-                    sub.OnMessageReceived(res);
-                    sub.Offset = res.result.offset;
+                    foreach (var publication in res.publications)
+                    {
+                        sub.ProcessPublication(publication);
+                    }
+                    sub.Offset = res.offset;
                 }
                 catch (Exception e)
                 {
@@ -94,7 +92,7 @@ namespace Unity.Services.Wire.Internal
 
         public Subscription GetSub(string channel)
         {
-            if (String.IsNullOrEmpty(channel))
+            if (string.IsNullOrEmpty(channel))
             {
                 return null;
             }
@@ -115,7 +113,7 @@ namespace Unity.Services.Wire.Internal
 
         public void RemoveSub(Subscription sub)
         {
-            if (String.IsNullOrEmpty(sub.Channel))
+            if (string.IsNullOrEmpty(sub.Channel))
             {
                 return;
             }
@@ -135,21 +133,22 @@ namespace Unity.Services.Wire.Internal
             }
         }
 
+        // recovering subscriptions after a reconnect
+        // (subscriptions that are made through the connection command)
         public void RecoverSubscriptions(Reply reply)
         {
-            var res = reply.result.ToConnectionResult();
+            var res = reply.connect;
             if (res.subs?.Count > 0)
             {
                 foreach (var subIterator in res.subs)
                 {
                     var sub = GetSub(subIterator.Key);
-                    var subreply = new Reply(0, null, new Result()
+                    if (sub == null)
                     {
-                        channel = subIterator.Key,
-                        publications = subIterator.Value.publications,
-                        offset = subIterator.Value.offset
-                    });
-                    OnSubscriptionComplete(sub, subreply);
+                        Logger.LogWarning($"Receiving a subscription result from an untracked subscription: ${subIterator.Key}");
+                        continue;
+                    }
+                    OnSubscriptionComplete(sub, subIterator.Value);
                 }
             }
         }

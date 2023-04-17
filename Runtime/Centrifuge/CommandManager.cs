@@ -3,19 +3,20 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Unity.Services.Core;
 using Unity.Services.Core.Scheduler.Internal;
+using Unity.Services.Wire.Protocol.Internal;
 
 namespace Unity.Services.Wire.Internal
 {
     class CommandManager
     {
-        readonly ConcurrentDictionary<uint, TaskCompletionSource<Reply>> m_Commands;
+        readonly ConcurrentDictionary<UInt32, TaskCompletionSource<Reply>> m_Commands;
         public Configuration Config;
 
         readonly IActionScheduler m_ActionScheduler;
 
         public CommandManager(Configuration configuration, Core.Scheduler.Internal.IActionScheduler actionScheduler)
         {
-            m_Commands = new ConcurrentDictionary<uint, TaskCompletionSource<Reply>> {};
+            m_Commands = new ConcurrentDictionary<UInt32, TaskCompletionSource<Reply>> {};
             m_ActionScheduler = actionScheduler;
             Config = configuration;
         }
@@ -42,7 +43,7 @@ namespace Unity.Services.Wire.Internal
             }
         }
 
-        public async Task<Reply> WaitForCommandAsync(uint id)
+        public async Task<Reply> WaitForCommandAsync(UInt32 id)
         {
             Reply result;
             if (!m_Commands.TryGetValue(id, out var commandCompletionSource))
@@ -95,7 +96,7 @@ namespace Unity.Services.Wire.Internal
             }
         }
 
-        Exception CentrifugeErrorToException(CentrifugeError error)
+        Exception CentrifugeErrorToException(Error error)
         {
             switch (error.code)
             {

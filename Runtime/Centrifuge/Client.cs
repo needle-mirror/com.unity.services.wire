@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core.Telemetry.Internal;
 using Unity.Services.Core.Threading.Internal;
+using Unity.Services.Wire.Protocol.Internal;
 using UnityEditor;
 
 namespace Unity.Services.Wire.Internal
@@ -40,9 +42,12 @@ namespace Unity.Services.Wire.Internal
 
         bool m_WantConnected = false;
 
+        byte[] k_PongMessage;
+
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
                       IUnityThreadUtils threadUtils)
         {
+            k_PongMessage = Encoding.UTF8.GetBytes("{}");
             m_ThreadUtils = threadUtils;
             m_Config = config;
             m_Metrics = metrics;
@@ -50,7 +55,7 @@ namespace Unity.Services.Wire.Internal
             SubscriptionRepository.SubscriptionCountChanged += (int subscriptionCount) =>
             {
                 m_Metrics.SendGaugeMetric("subscription_count", subscriptionCount);
-                Logger.LogVerbose($"Subscription count changed: {subscriptionCount}");
+                Logger.Log($"Subscription count changed: {subscriptionCount}");
             };
             m_Backoff = new ExponentialBackoffStrategy();
             m_CommandManager = new CommandManager(config, actionScheduler);
@@ -84,15 +89,15 @@ namespace Unity.Services.Wire.Internal
 
 #endif
 
-        async Task<Reply> SendCommandAsync(UInt32 id, Message command)
+        async Task<Reply> SendCommandAsync(UInt32 id, Command command)
         {
             var time = DateTime.Now;
             var tags = new Dictionary<string, string> {{"method", command.GetMethod()}};
             m_CommandManager.RegisterCommand(id);
 
+            Logger.Log($"sending {command.GetMethod()} command: {command.ToString()}");
             m_WebsocketClient.Send(command.GetBytes());
 
-            Logger.LogVerbose($"sending {command.GetMethod()} command: {command.Serialize()}");
             try
             {
                 var reply = await m_CommandManager.WaitForCommandAsync(id);
@@ -113,7 +118,6 @@ namespace Unity.Services.Wire.Internal
         /// The main objective is to detect connectivity issues with the server.
         /// It could also be used to measure the command round trip latency.
         /// </summary>
-        /// <typeparam name="TPayload"> The TPayload class representation of the payloads sent to your channel</typeparam>
         /// <returns> Return true if the routine exits because the system noticed the ws connection was closed by itself, false if an error happened during the Ping command</returns>
         async Task<bool> PingAsync()
         {
@@ -125,7 +129,7 @@ namespace Unity.Services.Wire.Internal
             m_PingCancellationSource = new CancellationTokenSource();
             while (true)
             {
-                Command<PingRequest> command = new Command<PingRequest>(Message.Method.PING, new PingRequest());
+                Command command = new Command(new PingRequest());
                 try
                 {
                     await SendCommandAsync(command.id, command);
@@ -203,23 +207,23 @@ namespace Unity.Services.Wire.Internal
         public async Task ConnectAsync()
         {
             m_WantConnected = true;
-            Logger.LogVerbose("Connection initiated. Checking state prior to connection.");
+            Logger.Log("Connection initiated. Checking state prior to connection.");
             while (m_ConnectionState == ConnectionState.Disconnecting)
             {
-                Logger.LogVerbose(
+                Logger.Log(
                     "Disconnection already in progress. Waiting for disconnection to complete before proceeding.");
                 await m_DisconnectionCompletionSource.Task;
             }
 
             while (m_ConnectionState == ConnectionState.Connecting)
             {
-                Logger.LogVerbose("Connection already in progress. Waiting for connection to complete.");
+                Logger.Log("Connection already in progress. Waiting for connection to complete.");
                 await m_ConnectionCompletionSource.Task;
             }
 
             if (m_ConnectionState == ConnectionState.Connected)
             {
-                Logger.LogVerbose("Already connected.");
+                Logger.Log("Already connected.");
                 return;
             }
 
@@ -245,7 +249,7 @@ namespace Unity.Services.Wire.Internal
                     throw new EmptyTokenException();
                 }
                 var request = new ConnectRequest(m_Config.token.AccessToken, subscriptionRequests);
-                var command = new Command<ConnectRequest>(Message.Method.CONNECT, request);
+                var command = new Command(request);
                 Reply reply;
                 try
                 {
@@ -277,10 +281,11 @@ namespace Unity.Services.Wire.Internal
 
         internal void OnWebsocketMessage(byte[] payload)
         {
-            m_Metrics.SendSumMetric("message_received", 1);
-            Logger.LogVerbose("WS received message: " + Encoding.UTF8.GetString(payload));
-            var messages = BatchMessages
+            Logger.Log("WS received message: " + Encoding.UTF8.GetString(payload));
+            var messages = BatchMessagesUtil
                 .SplitMessages(payload); // messages can be batched so we need to split them..
+            m_Metrics.SendSumMetric("message_received", messages.Count());
+
             foreach (var message in messages)
             {
                 var reply = Reply.FromJson(message);
@@ -289,15 +294,32 @@ namespace Unity.Services.Wire.Internal
                 {
                     HandleCommandReply(reply);
                 }
-                else if (reply.result?.type > 0)
+                else if (reply.push != null)
                 {
-                    HandlePushMessage(reply);
+                    try
+                    {
+                        HandlePushMessage(reply.push);
+                    }
+                    catch (NotImplementedException)
+                    {
+                        Logger.LogError($"Could not process push message: {message}");
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogException(e);
+                    }
                 }
                 else
                 {
-                    HandlePublications(reply);
+                    // this is a server Ping `{}`
+                    HandleServerPing();
                 }
             }
+        }
+
+        void HandleServerPing()
+        {
+            m_WebsocketClient.Send(k_PongMessage);
         }
 
         void OnWebsocketError(string msg)
@@ -327,7 +349,7 @@ namespace Unity.Services.Wire.Internal
                     // to prevent any rate limitation on UAS the server will wait a specified amount of time before retrying therefore it's useless
                     // to try again too early from the client.
                     var secondsUntilNextAttempt = (int)originalCode == 4333 ? 10.0f : m_Backoff.GetNext(); // TODO: get rid of the cast when the close code gets public
-                    Logger.LogVerbose($"Retrying websocket connection in : {secondsUntilNextAttempt} s");
+                    Logger.Log($"Retrying websocket connection in : {secondsUntilNextAttempt} s");
                     await Task.Delay(TimeSpan.FromSeconds(secondsUntilNextAttempt));
                     await ConnectAsync();
                 }
@@ -340,7 +362,7 @@ namespace Unity.Services.Wire.Internal
 
         private void InitWebsocket()
         {
-            Logger.LogVerbose("Initializing Websocket.");
+            Logger.Log("Initializing Websocket.");
             if (m_WebsocketInitialized)
             {
                 return;
@@ -412,12 +434,12 @@ namespace Unity.Services.Wire.Internal
             switch (state)
             {
                 case ConnectionState.Disconnected:
-                    Logger.LogVerbose("Wire disconnected.");
+                    Logger.Log("Wire disconnected.");
                     SubscriptionRepository.OnSocketClosed();
                     m_PingCancellationSource?.Cancel();
                     break;
                 case ConnectionState.Connected:
-                    Logger.LogVerbose("Wire connected.");
+                    Logger.Log("Wire connected.");
                     m_ConnectionCompletionSource.SetResult(ConnectionState.Connected);
                     m_ConnectionCompletionSource = null;
                     if (m_PingTask == null || m_PingTask.IsCompleted)
@@ -432,12 +454,12 @@ namespace Unity.Services.Wire.Internal
                     m_OnConnected = null;
                     break;
                 case ConnectionState.Connecting:
-                    Logger.LogVerbose("Wire connecting...");
+                    Logger.Log("Wire connecting...");
                     m_ConnectionCompletionSource = new TaskCompletionSource<ConnectionState>();
 
                     break;
                 case ConnectionState.Disconnecting:
-                    Logger.LogVerbose("Wire is disconnecting");
+                    Logger.Log("Wire is disconnecting");
 
                     break;
                 default:
@@ -445,51 +467,42 @@ namespace Unity.Services.Wire.Internal
             }
         }
 
-        // Handle publications from a channel
-        void HandlePublications(Reply reply)
+        // Handle push actions emitted from the server
+        void HandlePushMessage(Push push)
         {
-            if (string.IsNullOrEmpty(reply.result.channel))
-            {
-                throw new NoChannelPublicationException(reply.originalString);
-            }
+            var tags = new Dictionary<string, string> {{"push_type", push.GetPushType()}};
+            m_Metrics.SendSumMetric("push_received", 1, tags);
 
-            var subscription = SubscriptionRepository.GetSub(reply.result.channel);
-            if (subscription == null)
+            if (push.IsUnsub())
             {
-                Logger.LogError(
-                    $"The Wire server is sending publications related to an unknown channel: {reply.result.channel}.");
+                var subscription = SubscriptionRepository.GetSub(push.channel);
+                if (subscription != null)
+                {
+                    subscription.OnKickReceived();
+                    SubscriptionRepository.RemoveSub(subscription);
+                }
+                // we temporarily disable logging the subscription not found error
+                // here because we saw the server can send those sometimes. We might
+                // replug it later if we fix the issue on the server
                 return;
             }
 
-            subscription.OnMessageReceived(reply);
-        }
-
-        // Handle push actions emitted from the server
-        void HandlePushMessage(Reply reply)
-        {
-            var tags = new Dictionary<string, string> {{"push_type", reply.result.type.ToString()}};
-            m_Metrics.SendSumMetric("push_received", 1, tags);
-            switch (reply.result.type)
+            if (push.IsPub())
             {
-                case PushType.UNSUB: // force unsubscribe from server
-                    var subscription = SubscriptionRepository.GetSub(reply.result.channel);
-                    if (subscription != null)
-                    {
-                        subscription.OnKickReceived();
-                        SubscriptionRepository.RemoveSub(subscription);
-                    }
-                    else
-                    {
-                        Logger.LogError(
-                            $"The Wire server is sending push messages related to an unknown channel: {reply.result.channel}.");
-                    }
+                var subscription = SubscriptionRepository.GetSub(push.channel);
+                if (subscription != null)
+                {
+                    subscription.ProcessPublication(push.pub);
+                }
+                else
+                {
+                    Logger.LogError($"The Wire server sent a publication push messages related to an unknown channel: {push.channel}.");
+                }
 
-                    break;
-                default:
-                    Logger.LogError("Not implemented type: " + reply.result.type);
-                    // TODO: find a way of reporting this
-                    break;
+                return;
             }
+
+            throw new NotImplementedException();
         }
 
         // Handle replies from commands issued by the client
@@ -532,11 +545,11 @@ namespace Unity.Services.Wire.Internal
                 {
                     channel = subscription.Channel, token = token, recover = recover, offset = subscription.Offset
                 };
-                var command = new Command<SubscribeRequest>(Message.Method.SUBSCRIBE, request);
+                var command = new Command(request);
                 var reply = await SendCommandAsync(command.id, command);
 
-                subscription.Epoch = reply.result.epoch;
-                SubscriptionRepository.OnSubscriptionComplete(subscription, reply);
+                subscription.Epoch = reply.subscribe.epoch;
+                SubscriptionRepository.OnSubscriptionComplete(subscription, reply.subscribe);
             }
             catch (Exception exception)
             {
@@ -548,7 +561,7 @@ namespace Unity.Services.Wire.Internal
         public IChannel CreateChannel(IChannelTokenProvider tokenProvider)
         {
             var subscription = new Subscription(tokenProvider);
-            subscription.UnsubscribeReceived += async(TaskCompletionSource<bool> completionSource) =>
+            subscription.UnsubscribeReceived += async completionSource =>
             {
                 try
                 {
@@ -565,12 +578,10 @@ namespace Unity.Services.Wire.Internal
                 }
                 catch (Exception e)
                 {
-                    // TODO: find a way of reporting this
-                    Logger.LogException(e);
                     completionSource.SetException(e);
                 }
             };
-            subscription.SubscribeReceived += async(TaskCompletionSource<bool> completionSource) =>
+            subscription.SubscribeReceived += async completionSource =>
             {
                 try
                 {
@@ -602,7 +613,7 @@ namespace Unity.Services.Wire.Internal
 
             var request = new UnsubscribeRequest {channel = subscription.Channel, };
 
-            var command = new Command<UnsubscribeRequest>(Message.Method.UNSUBSCRIBE, request);
+            var command = new Command(request);
             await SendCommandAsync(command.id, command);
             SubscriptionRepository.RemoveSub(subscription);
         }

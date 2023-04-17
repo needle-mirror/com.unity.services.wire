@@ -83,7 +83,7 @@ namespace Unity.Services.Wire.Internal
                 {
                     var connect = !string.IsNullOrEmpty(accessTokenWire.AccessToken);
                     var action = connect ? "reconnect" : "disconnect";
-                    Logger.LogVerbose($"PlayerID changed to [{ id }], next action: { action }");
+                    Logger.Log($"PlayerID changed to [{ id }], next action: { action }");
                     await client.ResetAsync(connect);
                 }
                 catch (Exception e)
@@ -107,21 +107,21 @@ namespace Unity.Services.Wire.Internal
             // but a warning will display so that they know why we selected
             // the cloud environment.
 
-            var wireAddr = "wss://wire.unity3d.com/ws";
+            var wireAddr = "wss://wire.unity3d.com/v2/ws";
 
             #if WIRE_STAGING
 
             Logger.LogWarning("You are switching the cloud environment using the build flags " +
                 "(WIRE_STAGING, WIRE_TEST). Please consider using the project configuration instead.");
             Logger.Log("Wire will use the STAGING environment.");
-            wireAddr = "wss://wire-stg.unity3d.com/ws";
+            wireAddr = "wss://wire-stg.unity3d.com/v2/ws";
 
             #elif WIRE_TEST
 
             Logger.LogWarning("You are switching the cloud environment using the build flags" +
                 "(WIRE_STAGING, WIRE_TEST). Please consider using the project configuration instead.");
             Logger.Log("Wire will use the TEST environment.");
-            wireAddr = "wss://wire-test.unity3d.com/ws";
+            wireAddr = "wss://wire-test.unity3d.com/v2/ws";
 
             #else
 
@@ -129,7 +129,7 @@ namespace Unity.Services.Wire.Internal
             if (cloudEnvironment == k_StagingEnvironment)
             {
                 Logger.Log("Wire will use the STAGING environment.");
-                wireAddr = "wss://wire-stg.unity3d.com/ws";
+                wireAddr = "wss://wire-stg.unity3d.com/v2/ws";
             }
 
             #endif

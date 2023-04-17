@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 
 using Unity.Services.Core;
 using Unity.Services.Core.Threading.Internal;
+using Unity.Services.Wire.Protocol.Internal;
 
 namespace Unity.Services.Wire.Internal
 {
@@ -89,33 +90,16 @@ namespace Unity.Services.Wire.Internal
             }
         }
 
-        public void OnMessageReceived(Reply reply)
+        internal void ProcessPublication(Publication publication)
         {
-            if (reply.error != null && reply.error.code != 0)
+            try
             {
-                Logger.LogError(
-                    $"Received publication with error : code: {reply.error.code}, message: {reply.error.message}");
+                MessageReceived?.Invoke(publication.data.payload);
+                BinaryMessageReceived?.Invoke(Encoding.UTF8.GetBytes(publication.data.payload));
             }
-
-            if (reply.result?.publications?.Length > 0)
+            finally
             {
-                foreach (var publication in reply.result.publications)
-                {
-                    try
-                    {
-                        MessageReceived?.Invoke(publication.data.payload);
-                        BinaryMessageReceived?.Invoke(Encoding.UTF8.GetBytes(publication.data.payload));
-                    }
-                    finally
-                    {
-                        Offset = publication.offset;
-                    }
-                }
-            }
-            else if (reply.result?.data?.data?.payload != null)
-            {
-                MessageReceived?.Invoke(reply.result.data.data.payload);
-                Offset++;
+                Offset = publication.offset;
             }
         }
 
@@ -171,7 +155,7 @@ namespace Unity.Services.Wire.Internal
             }
             catch (Exception e)
             {
-                Logger.LogError(e);
+                ErrorReceived?.Invoke($"Exception raised during disposal of the Channel: ${e}");
             }
 
             m_TokenProvider = null;
@@ -193,7 +177,7 @@ namespace Unity.Services.Wire.Internal
             {
                 throw new ObjectDisposedException(ChannelDisplay);
             }
-            Logger.LogVerbose($"Subscribing to {ChannelDisplay}");
+            Logger.Log($"Subscribing to {ChannelDisplay}");
             SubscriptionState = SubscriptionState.Subscribing;
             var completionSource = new TaskCompletionSource<bool>();
             SubscribeReceived?.Invoke(completionSource);
@@ -206,7 +190,7 @@ namespace Unity.Services.Wire.Internal
             {
                 throw new ObjectDisposedException(ChannelDisplay);
             }
-            Logger.LogVerbose($"Unsubscribing from {ChannelDisplay}");
+            Logger.Log($"Unsubscribing from {ChannelDisplay}");
             var completionSource = new TaskCompletionSource<bool>();
             UnsubscribeReceived?.Invoke(completionSource);
             return completionSource.Task;

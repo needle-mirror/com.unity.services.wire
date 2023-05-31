@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.1.6",
+  "version": "1.1.8",
   "unity": "2020.3",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -17,17 +17,17 @@
       "Mac",
       "PC"
     ],
-    "changelog": "### Fixed\n* improved logging\n* removed error log when unsubscribe arrives on an unsubscribed channel"
+    "changelog": "### Fixed\n* fixed a websocket bug referencing nonexistent Runtime object\n* removed useless meta files from the package\n### Changed\n* internet reachability is no longer a hard requirement for package initialization"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.1.6"
+    "com.unity.services.wire.tests": "1.1.8"
   },
   "upmCi": {
-    "footprint": "3e5f0c53cf9ab42b8480a3a3cd1eed5bdbb77e1c"
+    "footprint": "fd083410b88946303d3d28bf4291061557831588"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "486025dcbb83ceed477155e5c41b8eab9aa53b28"
+    "revision": "301e737235c3de157e2056564839fc63dadce901"
   }
 }

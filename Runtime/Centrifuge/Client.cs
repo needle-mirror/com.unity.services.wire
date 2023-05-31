@@ -44,6 +44,8 @@ namespace Unity.Services.Wire.Internal
 
         byte[] k_PongMessage;
 
+        bool m_Disabled = false;
+
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
                       IUnityThreadUtils threadUtils)
         {
@@ -170,6 +172,28 @@ namespace Unity.Services.Wire.Internal
 
             m_WebsocketClient.Close();
             m_PingCancellationSource = null;
+        }
+
+        internal void OnIdentityChanged(string playerId)
+        {
+            if (m_Disabled)
+            {
+                return;
+            }
+            m_ThreadUtils.Send(async() =>
+            {
+                try
+                {
+                    var connect = !string.IsNullOrEmpty(m_Config.token.AccessToken);
+                    var action = connect ? "reconnect" : "disconnect";
+                    Logger.Log($"PlayerID changed to [{ playerId }], next action: { action }");
+                    await ResetAsync(connect);
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                }
+            });
         }
 
         internal async Task DisconnectAsync()
@@ -602,6 +626,13 @@ namespace Unity.Services.Wire.Internal
                 SubscriptionRepository.RemoveSub(subscription);
             };
             return subscription;
+        }
+
+        // disconnects and prevent the Wire connection from being maintained
+        public void Disable()
+        {
+            m_Disabled = true;
+            m_ThreadUtils.Send(DisconnectAsync);
         }
 
         async Task UnsubscribeAsync(Subscription subscription)

@@ -35,11 +35,6 @@ namespace Unity.Services.Wire.Internal
 
         public async Task Initialize(CoreRegistry registry)
         {
-            if (Application.internetReachability == NetworkReachability.NotReachable)
-            {
-                throw new WarningException("The Wire package cannot initialize on a device that does not have the capacity to connect to the internet.");
-            }
-
             // threading
             var actionScheduler = registry.GetServiceComponent<IActionScheduler>();
             if (actionScheduler == null)
@@ -78,19 +73,7 @@ namespace Unity.Services.Wire.Internal
 
             var client = new Client(GetConfiguration(accessTokenWire, projectCfg), actionScheduler, metrics, threadUtils);
 
-            playerId.PlayerIdChanged += id => threadUtils.Send(async() => {
-                try
-                {
-                    var connect = !string.IsNullOrEmpty(accessTokenWire.AccessToken);
-                    var action = connect ? "reconnect" : "disconnect";
-                    Logger.Log($"PlayerID changed to [{ id }], next action: { action }");
-                    await client.ResetAsync(connect);
-                }
-                catch (Exception e)
-                {
-                    Logger.LogException(e);
-                }
-            });
+            playerId.PlayerIdChanged += client.OnIdentityChanged;
 
             if (!string.IsNullOrEmpty(accessTokenWire.AccessToken))
             {
@@ -100,7 +83,7 @@ namespace Unity.Services.Wire.Internal
             registry.RegisterServiceComponent<IWire>(client);
         }
 
-        Configuration GetConfiguration(IAccessToken token, IProjectConfiguration projectCfg)
+        internal Configuration GetConfiguration(IAccessToken token, IProjectConfiguration projectCfg)
         {
             // for backward compatibility, we still check for build flags
             // if previous user was using build flags, it will keep working,

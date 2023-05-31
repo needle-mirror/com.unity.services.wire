@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2023-05-31
+### Fixed
+* fixed a websocket bug referencing nonexistent Runtime object
+* removed useless meta files from the package
+### Changed
+* internet reachability is no longer a hard requirement for package initialization
+
 ## [1.1.6] - 2023-04-17
 ### Fixed
 * improved logging

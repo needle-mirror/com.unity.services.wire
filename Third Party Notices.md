@@ -25,7 +25,7 @@ List of modifications made on the original project:
     * changed the access modifiers
     * changed the formatting
     * fixed an issue with the tls configuration
-    * fixed an issue with message decoding
+    * fixed a reference to the Runtime object in the jslib
 
 Copyright 2018 Jiri Hybek <jiri@hybek.cz>
 

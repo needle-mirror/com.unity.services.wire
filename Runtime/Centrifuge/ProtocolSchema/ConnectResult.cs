@@ -13,6 +13,8 @@ namespace Unity.Services.Wire.Protocol.Internal
         public bool expires;
         public UInt32 ttl;
         public string data;
+        public UInt32 ping;
+        public bool pong;
         public Dictionary<string, SubscribeResult> subs;
 
         [Preserve]

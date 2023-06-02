@@ -8,12 +8,12 @@ namespace Unity.Services.Wire.Internal
 
         public string address;
 
-        public double PingIntervalInSeconds = 25.0;    // centrifuge specific
-
         public double CommandTimeoutInSeconds = 5.0;    // centrifuge specific
 
         public double RetrieveTokenTimeoutInSeconds = 5.0;
 
         public IWebSocket WebSocket = null;  // for unit tests
+
+        public double MaxServerPingDelay = 10.0; // centrifuge specific
     }
 }

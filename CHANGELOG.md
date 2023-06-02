@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2023-06-02
+### Fixed
+* fixed a bug in the ping protocol
+* fixed an issue preventing the package to work with Nintendo Switch
+* fixed vulnerabilities in the Websocket library
+### Changed
+* Excluded WebGL and Switch platforms from the websocket-sharp target
+
 ## [1.1.8] - 2023-05-31
 ### Fixed
 * fixed a websocket bug referencing nonexistent Runtime object

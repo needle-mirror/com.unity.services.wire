@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Unity.Services.Core.Scheduler.Internal;
 using Unity.Services.Core.Telemetry.Internal;
 using Unity.Services.Core.Threading.Internal;
 using Unity.Services.Wire.Protocol.Internal;
@@ -26,8 +27,6 @@ namespace Unity.Services.Wire.Internal
         TaskCompletionSource<ConnectionState> m_ConnectionCompletionSource;
         TaskCompletionSource<ConnectionState> m_DisconnectionCompletionSource;
         internal ConnectionState m_ConnectionState = ConnectionState.Disconnected;
-        CancellationTokenSource m_PingCancellationSource;
-        Task<bool> m_PingTask;
         IWebSocket m_WebsocketClient;
 
         internal IBackoffStrategy m_Backoff;
@@ -42,9 +41,14 @@ namespace Unity.Services.Wire.Internal
 
         bool m_WantConnected = false;
 
-        byte[] k_PongMessage;
+        internal byte[] k_PongMessage;
 
         bool m_Disabled = false;
+
+        bool m_Pong = false;
+        UInt32 m_ServerPingIntervalS = 0;
+        IActionScheduler m_ActionScheduler;
+        long m_PingDeadlineScheduledId = 0;
 
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
                       IUnityThreadUtils threadUtils)
@@ -53,6 +57,7 @@ namespace Unity.Services.Wire.Internal
             m_ThreadUtils = threadUtils;
             m_Config = config;
             m_Metrics = metrics;
+            m_ActionScheduler = actionScheduler;
             SubscriptionRepository = new ConcurrentDictSubscriptionRepository();
             SubscriptionRepository.SubscriptionCountChanged += (int subscriptionCount) =>
             {
@@ -113,65 +118,6 @@ namespace Unity.Services.Wire.Internal
                 m_Metrics.SendHistogramMetric("command", (DateTime.Now - time).TotalMilliseconds, tags);
                 throw;
             }
-        }
-
-        /// <summary>
-        /// Ping is a routine responsible for sending a Ping command to centrifuge at a regular interval.
-        /// The main objective is to detect connectivity issues with the server.
-        /// It could also be used to measure the command round trip latency.
-        /// </summary>
-        /// <returns> Return true if the routine exits because the system noticed the ws connection was closed by itself, false if an error happened during the Ping command</returns>
-        async Task<bool> PingAsync()
-        {
-            if (m_PingCancellationSource != null)
-            {
-                throw new Exception("[Wire] Unexpected exception: ping cancellation source already exists");
-            }
-
-            m_PingCancellationSource = new CancellationTokenSource();
-            while (true)
-            {
-                Command command = new Command(new PingRequest());
-                try
-                {
-                    await SendCommandAsync(command.id, command);
-                }
-                catch (CommandInterruptedException)
-                {
-                    OnPingInterrupted(null);
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    OnPingInterrupted(e);
-                    return false;
-                }
-
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(m_Config.PingIntervalInSeconds),
-                        m_PingCancellationSource.Token);
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-            }
-
-            m_PingCancellationSource = null;
-
-            return true;
-        }
-
-        private void OnPingInterrupted(Exception exception)
-        {
-            if (exception != null)
-            {
-                Logger.LogError("Exception caught during Ping command: " + exception.Message);
-            }
-
-            m_WebsocketClient.Close();
-            m_PingCancellationSource = null;
         }
 
         internal void OnIdentityChanged(string playerId)
@@ -281,6 +227,11 @@ namespace Unity.Services.Wire.Internal
                     m_Backoff.Reset();
                     SubscriptionRepository.RecoverSubscriptions(reply);
                     ChangeConnectionState(ConnectionState.Connected);
+
+                    // ping pong
+                    m_Pong = reply.connect.pong;
+                    m_ServerPingIntervalS = reply.connect.ping;
+                    SetupPingDeadline();
                 }
                 catch (CommandInterruptedException exception)
                 {
@@ -301,6 +252,34 @@ namespace Unity.Services.Wire.Internal
             {
                 Logger.LogException(e);
             }
+        }
+
+        void SetupPingDeadline()
+        {
+            if (m_ServerPingIntervalS != 0)
+            {
+                m_PingDeadlineScheduledId = m_ActionScheduler.ScheduleAction(PingDeadline, m_ServerPingIntervalS + (uint)m_Config.MaxServerPingDelay);
+            }
+        }
+
+        void CancelPingDeadline()
+        {
+            if (m_PingDeadlineScheduledId != 0)
+            {
+                m_ActionScheduler.CancelAction(m_PingDeadlineScheduledId);
+                m_PingDeadlineScheduledId = 0;
+            }
+        }
+
+        void PingDeadline()
+        {
+            m_PingDeadlineScheduledId = 0;
+            if (m_ConnectionState != ConnectionState.Connected)
+            {
+                return;
+            }
+            Logger.LogError("The connection to the server stalled. Disconnecting.");
+            m_WebsocketClient.Close();
         }
 
         internal void OnWebsocketMessage(byte[] payload)
@@ -343,7 +322,12 @@ namespace Unity.Services.Wire.Internal
 
         void HandleServerPing()
         {
-            m_WebsocketClient.Send(k_PongMessage);
+            CancelPingDeadline();
+            if (m_Pong)
+            {
+                m_WebsocketClient.Send(k_PongMessage);
+            }
+            SetupPingDeadline();
         }
 
         void OnWebsocketError(string msg)
@@ -356,6 +340,7 @@ namespace Unity.Services.Wire.Internal
         {
             try
             {
+                CancelPingDeadline();
                 var code = (CentrifugeCloseCode)originalCode;
                 Logger.Log("Websocket closed with code: " + code);
                 ChangeConnectionState(ConnectionState.Disconnected);
@@ -460,20 +445,11 @@ namespace Unity.Services.Wire.Internal
                 case ConnectionState.Disconnected:
                     Logger.Log("Wire disconnected.");
                     SubscriptionRepository.OnSocketClosed();
-                    m_PingCancellationSource?.Cancel();
                     break;
                 case ConnectionState.Connected:
                     Logger.Log("Wire connected.");
                     m_ConnectionCompletionSource.SetResult(ConnectionState.Connected);
                     m_ConnectionCompletionSource = null;
-                    if (m_PingTask == null || m_PingTask.IsCompleted)
-                    {
-                        m_PingTask = PingAsync(); // start ping pong thread
-                    }
-                    else
-                    {
-                        // TODO: report something wrong
-                    }
                     m_OnConnected?.Invoke();
                     m_OnConnected = null;
                     break;

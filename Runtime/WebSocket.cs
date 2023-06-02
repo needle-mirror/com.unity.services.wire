@@ -422,9 +422,9 @@ namespace Unity.Services.Wire.Internal
         public event WebSocketCloseEventHandler OnClose;
 
         /// <summary>
-        /// The WebSocketSharp instance.
+        /// The UnityWebSocketSharp instance.
         /// </summary>
-        protected WebSocketSharp.WebSocket ws;
+        protected UnityWebSocketSharp.WebSocket ws;
 
         /// <summary>
         /// WebSocket constructor.
@@ -435,7 +435,7 @@ namespace Unity.Services.Wire.Internal
             try
             {
                 // Create WebSocket instance
-                this.ws = new WebSocketSharp.WebSocket(url);
+                this.ws = new UnityWebSocketSharp.WebSocket(url);
 
                 // Bind OnOpen event
                 this.ws.OnOpen += (sender, ev) =>
@@ -476,7 +476,7 @@ namespace Unity.Services.Wire.Internal
         public void Connect()
         {
             // Check state
-            if (this.ws.ReadyState == WebSocketSharp.WebSocketState.Open || this.ws.ReadyState == WebSocketSharp.WebSocketState.Closing)
+            if (this.ws.ReadyState == UnityWebSocketSharp.WebSocketState.Open || this.ws.ReadyState == UnityWebSocketSharp.WebSocketState.Closing)
                 throw new WebSocketInvalidStateException("WebSocket is already connected or is closing.");
 
             try
@@ -502,10 +502,10 @@ namespace Unity.Services.Wire.Internal
         public void Close(WebSocketCloseCode code = WebSocketCloseCode.Normal, string reason = null)
         {
             // Check state
-            if (this.ws.ReadyState == WebSocketSharp.WebSocketState.Closing)
+            if (this.ws.ReadyState == UnityWebSocketSharp.WebSocketState.Closing)
                 throw new WebSocketInvalidStateException("WebSocket is already closing.");
 
-            if (this.ws.ReadyState == WebSocketSharp.WebSocketState.Closed)
+            if (this.ws.ReadyState == UnityWebSocketSharp.WebSocketState.Closed)
                 throw new WebSocketInvalidStateException("WebSocket is already closed.");
 
             try
@@ -525,7 +525,7 @@ namespace Unity.Services.Wire.Internal
         public void Send(byte[] data)
         {
             // Check state
-            if (this.ws.ReadyState != WebSocketSharp.WebSocketState.Open)
+            if (this.ws.ReadyState != UnityWebSocketSharp.WebSocketState.Open)
                 throw new WebSocketInvalidStateException("WebSocket is not in open state.");
 
             try
@@ -546,16 +546,16 @@ namespace Unity.Services.Wire.Internal
         {
             switch (this.ws.ReadyState)
             {
-                case WebSocketSharp.WebSocketState.Connecting:
+                case UnityWebSocketSharp.WebSocketState.Connecting:
                     return WebSocketState.Connecting;
 
-                case WebSocketSharp.WebSocketState.Open:
+                case UnityWebSocketSharp.WebSocketState.Open:
                     return WebSocketState.Open;
 
-                case WebSocketSharp.WebSocketState.Closing:
+                case UnityWebSocketSharp.WebSocketState.Closing:
                     return WebSocketState.Closing;
 
-                case WebSocketSharp.WebSocketState.Closed:
+                case UnityWebSocketSharp.WebSocketState.Closed:
                     return WebSocketState.Closed;
 
                 default:
@@ -566,7 +566,7 @@ namespace Unity.Services.Wire.Internal
 #endif
 
     /// <summary>
-    /// Class providing static access methods to work with JSLIB WebSocket or WebSocketSharp interface
+    /// Class providing static access methods to work with JSLIB WebSocket or UnityWebSocketSharp interface
     /// </summary>
     static class WebSocketFactory
     {

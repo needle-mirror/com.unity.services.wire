@@ -39,7 +39,7 @@ namespace Unity.Services.Wire.Internal
 
         bool m_WebsocketInitialized = false;
 
-        bool m_WantConnected = false;
+        internal bool m_WantConnected = false;
 
         internal byte[] k_PongMessage;
 
@@ -98,15 +98,30 @@ namespace Unity.Services.Wire.Internal
 
         async Task<Reply> SendCommandAsync(UInt32 id, Command command)
         {
+            if (m_Disabled || !m_WantConnected) return null;
+
             var time = DateTime.Now;
             var tags = new Dictionary<string, string> {{"method", command.GetMethod()}};
             m_CommandManager.RegisterCommand(id);
 
-            Logger.Log($"sending {command.GetMethod()} command: {command.ToString()}");
-            m_WebsocketClient.Send(command.GetBytes());
+            if (m_WebsocketClient.GetState() != WebSocketState.Open)
+            {
+                if (m_ConnectionCompletionSource != null)
+                {
+                    Logger.Log($"Command attempt made while not connected, waiting for a connection to be established before sending command #{id}.");
+                    await m_ConnectionCompletionSource.Task;
+                    Logger.Log($"Connection established. Resuming expedition of command #{id}.");
+                }
+                else
+                {
+                    Logger.LogWarning($"No connection task found, impossible to wait until connection completion. Command #{id} will be sent anyway.");
+                }
+            }
 
             try
             {
+                Logger.Log($"sending {command.GetMethod()} command: {command.ToString()}");
+                m_WebsocketClient.Send(command.GetBytes());
                 var reply = await m_CommandManager.WaitForCommandAsync(id);
                 tags.Add("result", "success");
                 m_Metrics.SendHistogramMetric("command", (DateTime.Now - time).TotalMilliseconds, tags);
@@ -176,7 +191,6 @@ namespace Unity.Services.Wire.Internal
 
         public async Task ConnectAsync()
         {
-            m_WantConnected = true;
             Logger.Log("Connection initiated. Checking state prior to connection.");
             while (m_ConnectionState == ConnectionState.Disconnecting)
             {
@@ -198,6 +212,7 @@ namespace Unity.Services.Wire.Internal
             }
 
             ChangeConnectionState(ConnectionState.Connecting);
+            m_WantConnected = true;
 
             // initialize websocket object
             InitWebsocket();
@@ -513,6 +528,9 @@ namespace Unity.Services.Wire.Internal
 
         async Task SubscribeAsync(Subscription subscription)
         {
+            // we should ignore calls to this function if Wire has been disabled
+            if (m_Disabled) return;
+
             if (m_ConnectionState != ConnectionState.Connected)
             {
                 var tcs = new TaskCompletionSource<bool>();
@@ -613,6 +631,10 @@ namespace Unity.Services.Wire.Internal
 
         async Task UnsubscribeAsync(Subscription subscription)
         {
+            // we should ignore calls to this function if Wire has been disconnected, it means the lifecycle of the Wire
+            // connection has terminated
+            if (!m_WantConnected || m_Disabled) return;
+
             if (!SubscriptionRepository.IsAlreadySubscribed(subscription))
             {
                 throw new AlreadyUnsubscribedException(subscription.Channel);

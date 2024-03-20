@@ -4,6 +4,16 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2024-03-20
+
+### Changed 
+
+- Updated unity core to 1.12.4 
+
+### Added
+
+- Added support for multiplayer integration
+
 ## [1.2.2] - 2023-09-21
 ### Fixed
 * the unity-websocket-sharp is no longer disabled by the define `WIRE_EXCLUDE_WEBSOCKETSHARP`

@@ -11,19 +11,22 @@ using UnityEngine;
 
 namespace Unity.Services.Wire.Internal
 {
-    class WireServiceProvider : IInitializablePackage
+    class WireServiceProvider : IInitializablePackageV2
     {
         const string k_CloudEnvironmentKey = "com.unity.services.core.cloud-environment";
         const string k_StagingEnvironment = "staging";
 
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        static void Register()
+        static void InitializeOnLoad()
         {
-            // Pass an instance of this class to Core
-            var generatedPackageRegistry =
-                CoreRegistry.Instance.RegisterPackage(new WireServiceProvider());
-            // And specify what components it requires, or provides.
-            generatedPackageRegistry
+            var initializer = new WireServiceProvider();
+            initializer.Register(CorePackageRegistry.Instance);
+        }
+
+        public void Register(CorePackageRegistry registry)
+        {
+            registry.Register(this)
                 .DependsOn<IAccessToken>()
                 .DependsOn<IPlayerId>()
                 .DependsOn<IActionScheduler>()
@@ -33,7 +36,17 @@ namespace Unity.Services.Wire.Internal
                 .ProvidesComponent<IWire>();
         }
 
-        public async Task Initialize(CoreRegistry registry)
+        public Task Initialize(CoreRegistry registry)
+        {
+            return InitializeComponent(registry);
+        }
+
+        public Task InitializeInstanceAsync(CoreRegistry registry)
+        {
+            return InitializeComponent(registry);
+        }
+
+        async Task InitializeComponent(CoreRegistry registry)
         {
             // threading
             var actionScheduler = registry.GetServiceComponent<IActionScheduler>();

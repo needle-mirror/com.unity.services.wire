@@ -1,13 +1,13 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.2.3",
+  "version": "1.2.5",
   "unity": "2020.3",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
-    "com.unity.services.core": "1.12.4",
+    "com.unity.services.core": "1.12.5",
     "com.unity.nuget.newtonsoft-json": "3.2.1",
-    "com.unity.services.authentication": "2.7.2"
+    "com.unity.services.authentication": "2.7.4"
   },
   "type": "library",
   "_upm": {
@@ -22,17 +22,17 @@
       "Switch",
       "WebGL"
     ],
-    "changelog": "### Changed \n\n- Updated unity core to 1.12.4 \n\n### Added\n\n- Added support for multiplayer integration"
+    "changelog": "### Added\n- Added Apple Privacy Manifest\n- Updated com.unity.services.core to 1.12.5\n- Updated com.unity.services.authentication to 2.7.4"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.2.3"
+    "com.unity.services.wire.tests": "1.2.5"
   },
   "upmCi": {
-    "footprint": "ef9e2b2a2f1a3b46dd98e92373471a2d828dc1dc"
+    "footprint": "56e8abf35a8054f7aa783b6b51434111386bbe6f"
   },
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "c95a6f4077dc0f3c3083e32645ecbb0a92e7a135"
+    "revision": "b776bb7d7d2aab0d94bd33c53f6c80e061d156ef"
   }
 }

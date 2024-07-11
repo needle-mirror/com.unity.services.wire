@@ -84,7 +84,7 @@ namespace Unity.Services.Wire.Internal
                 throw new MissingComponentException("IProjectConfiguration component not initialized.");
             }
 
-            var client = new Client(GetConfiguration(accessTokenWire, projectCfg), actionScheduler, metrics, threadUtils);
+            var client = new Client(GetConfiguration(accessTokenWire, projectCfg), actionScheduler, metrics, threadUtils, new WebSocketFactory());
 
             playerId.PlayerIdChanged += client.OnIdentityChanged;
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Unity.Services.Core.Scheduler.Internal;
 using Unity.Services.Core.Telemetry.Internal;
@@ -34,10 +33,9 @@ namespace Unity.Services.Wire.Internal
         readonly Configuration m_Config;
         readonly IMetrics m_Metrics;
         readonly IUnityThreadUtils m_ThreadUtils;
+        readonly IWebsocketFactory m_WebsocketFactory;
 
         event Action m_OnConnected;
-
-        bool m_WebsocketInitialized = false;
 
         internal bool m_WantConnected = false;
 
@@ -51,13 +49,14 @@ namespace Unity.Services.Wire.Internal
         long m_PingDeadlineScheduledId = 0;
 
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
-                      IUnityThreadUtils threadUtils)
+                      IUnityThreadUtils threadUtils, IWebsocketFactory websocketFactory)
         {
             k_PongMessage = Encoding.UTF8.GetBytes("{}");
             m_ThreadUtils = threadUtils;
             m_Config = config;
             m_Metrics = metrics;
             m_ActionScheduler = actionScheduler;
+            m_WebsocketFactory = websocketFactory;
             SubscriptionRepository = new ConcurrentDictSubscriptionRepository();
             SubscriptionRepository.SubscriptionCountChanged += (int subscriptionCount) =>
             {
@@ -387,26 +386,26 @@ namespace Unity.Services.Wire.Internal
         private void InitWebsocket()
         {
             Logger.Log("Initializing Websocket.");
-            if (m_WebsocketInitialized)
-            {
-                return;
-            }
-            m_WebsocketInitialized = true;
 
+            if (m_WebsocketClient != null)
+            {
+                //  Unregister old listeners for safety
+                m_WebsocketClient.OnOpen -= WebsocketOpenListener;
+                m_WebsocketClient.OnMessage -= WebsocketMessageListener;
+                m_WebsocketClient.OnError -= WebsocketErrorListener;
+                m_WebsocketClient.OnClose -= WebsocketCloseListener;
+            }
             // use the eventual websocket override instead of the default one
-            m_WebsocketClient = m_Config.WebSocket ?? WebSocketFactory.CreateInstance(m_Config.address);
+            m_WebsocketClient = m_WebsocketFactory.CreateInstance(m_Config.address);
 
             //  Add OnOpen event listener
-            m_WebsocketClient.OnOpen += () => m_ThreadUtils.PostAsync(OnWebsocketOpen);
-
+            m_WebsocketClient.OnOpen += WebsocketOpenListener;
             // Add OnMessage event listener
-            m_WebsocketClient.OnMessage += data => m_ThreadUtils.PostAsync(() => OnWebsocketMessage(data));
-
+            m_WebsocketClient.OnMessage += WebsocketMessageListener;
             // Add OnError event listener
-            m_WebsocketClient.OnError += errMsg => m_ThreadUtils.PostAsync(() => OnWebsocketError(errMsg));
-
+            m_WebsocketClient.OnError += WebsocketErrorListener;
             // Add OnClose event listener
-            m_WebsocketClient.OnClose += code => m_ThreadUtils.PostAsync(() => OnWebsocketClose(code));
+            m_WebsocketClient.OnClose += WebsocketCloseListener;
         }
 
         private bool ShouldReconnect(CentrifugeCloseCode code)
@@ -645,6 +644,26 @@ namespace Unity.Services.Wire.Internal
             var command = new Command(request);
             await SendCommandAsync(command.id, command);
             SubscriptionRepository.RemoveSub(subscription);
+        }
+
+        private async void WebsocketOpenListener()
+        {
+            await m_ThreadUtils.PostAsync(OnWebsocketOpen);
+        }
+
+        private async void WebsocketCloseListener(WebSocketCloseCode code)
+        {
+            await m_ThreadUtils.PostAsync(() => OnWebsocketClose(code));
+        }
+
+        private async void WebsocketErrorListener(string msg)
+        {
+            await m_ThreadUtils.PostAsync(() => OnWebsocketError(msg));
+        }
+
+        private async void WebsocketMessageListener(byte[] data)
+        {
+            await m_ThreadUtils.PostAsync(() => OnWebsocketMessage(data));
         }
     }
 }

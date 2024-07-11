@@ -568,7 +568,7 @@ namespace Unity.Services.Wire.Internal
     /// <summary>
     /// Class providing static access methods to work with JSLIB WebSocket or UnityWebSocketSharp interface
     /// </summary>
-    static class WebSocketFactory
+    class WebSocketFactory : IWebsocketFactory
     {
 #if UNITY_WEBGL && !UNITY_EDITOR
         /* Map of websocket instances */
@@ -681,7 +681,7 @@ namespace Unity.Services.Wire.Internal
         /// </summary>
         /// <returns>The WebSocket instance.</returns>
         /// <param name="url">WebSocket valid URL.</param>
-        public static WebSocket CreateInstance(string url)
+        public IWebSocket CreateInstance(string url)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (!isInitialized)
@@ -689,8 +689,8 @@ namespace Unity.Services.Wire.Internal
 
             int instanceId = WebSocketAllocate(url);
             WebSocket wrapper = new WebSocket(instanceId);
+            instances.Clear(); // We no longer support maintaining multiple instances.
             instances.Add(instanceId, wrapper);
-
             return wrapper;
 #else
             return new WebSocket(url);

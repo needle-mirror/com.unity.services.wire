@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Unity.Services.Core;
 using Unity.Services.Wire.Internal;
 using UnityEngine.Scripting;
 
@@ -27,7 +28,16 @@ namespace Unity.Services.Wire.Protocol.Internal
             var subscriptionRequests = new Dictionary<string, SubscribeRequest>();
             foreach (var subIterator in repository.GetAll())
             {
-                var subscriptionToken = await subIterator.Value.RetrieveTokenAsync();
+                string subscriptionToken;
+                try
+                {
+                    subscriptionToken = await subIterator.Value.RetrieveTokenAsync();
+                }
+                catch (Exception e)
+                {
+                    subIterator.Value.OnError($"Failed to retrieve token: {e.Message}");
+                    continue;
+                }
                 subscriptionRequests.Add(subIterator.Key, new SubscribeRequest
                 {
                     recover = repository.IsRecovering(subIterator.Value),

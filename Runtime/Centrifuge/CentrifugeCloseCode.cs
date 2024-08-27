@@ -1,5 +1,8 @@
 namespace Unity.Services.Wire.Internal
 {
+    /// <summary>
+    /// The reason for which centrifuge was closed.
+    /// </summary>
     public enum CentrifugeCloseCode
     {
         // Original websocket-sharp implementation close codes

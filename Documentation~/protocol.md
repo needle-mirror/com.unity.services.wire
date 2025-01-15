@@ -35,8 +35,8 @@ The checked ones are the ones needed directly or indirectly by Wire.
 - [ ] connection token refresh
 - [ ] handle disconnect advice from server
 - [ ] server-side subscriptions
-- [x] batching API				
-- [ ] bidirectional WebSocket emulation			
+- [x] batching API
+- [ ] bidirectional WebSocket emulation
 
 ### client-side subscription related features
 - [x] subscribe to a channel
@@ -71,9 +71,9 @@ sent by the client to express a request to the server. A Reply will be sent by t
 to reply to a Command, or to send a push message.
 
 The Command has a non-zero `id` field that is unique in the client session. The client is
-fixing its value. Generally, we advise the client to start at 1 and increment for each new 
+fixing its value. Generally, we advise the client to start at 1 and increment for each new
 command.
-When sending a Reply to a Command, the server will set the `id` field of the Reply to the id 
+When sending a Reply to a Command, the server will set the `id` field of the Reply to the id
 of the Command it replies to. That way it's easy to map a Reply to its Command in case more
 than one Command are in flight.
 
@@ -88,9 +88,9 @@ The Reply to a *connect* command will have a *connect* field, same goes for subs
 
 The server can also send Reply messages that are not in response to commands sent by the client.
 In this case the id field won't be set or will be 0. This Reply messages are [Push](#push-diagram)
-messages and will have their `push` field set.  
+messages and will have their `push` field set.
 Wire will only send 2 types of push messages: [Publication](#publication-diagram) and
-[Unsubscribe](#unsubscribe-diagram). 
+[Unsubscribe](#unsubscribe-diagram).
 * [Publication](#publication-diagram) messages are the one carrying the actual messages
 updates on a subscription.
 * [Unsubscribe](#unsubscribe-diagram) messages are notification that the server forcefully
@@ -113,7 +113,7 @@ The message are then concatenated using a new line character (`\n`) as a separat
 
 To save time and bandwidth, the Client can join several subscribe request to their
 connection request.
-To do so, the client needs to provide a map that associate channels to their 
+To do so, the client needs to provide a map that associate channels to their
 [subscription request](#subscriberequest-diagram) in the `subs` field of the
 [connect request](#connectrequest-diagram). The Wire server will treat each
 subscription individually, and provide a map containing the
@@ -136,7 +136,7 @@ has to be initiated as soon as possible. It's  a Command/Reply transaction, the
 Command sent by the client will contain a ConnectRequest object, the Reply from
 the server will contain a ConnectResult object.
 
-> NOTE  
+> NOTE
 > Exceptionally, in case of error during a connection transaction, for
 example if the token verification fails, instead of sending a Reply with an Error
 object, the server will terminate the connection with a WebsocketNormal close code.
@@ -227,7 +227,7 @@ Note right of Client: Client received a new message on subscription: {"message":
 ## Wire integration
 
 Wire integrates centrifuge and will use only a subset of its functionalities. It will also
-enforce or expect a few things.  
+enforce or expect a few things.
 
 ### Authentication
 
@@ -243,10 +243,10 @@ While Centrifuge allows the notion of public channels, Wire only uses private ch
 That means that to subscribe to a channel, one must provide a token to have that
 subscription granted by Wire.
 In Wire, each channel is *owned* by a Unity service. In consequence, only the service owning
-a channel can provide a token to subscribe to a channel.  
+a channel can provide a token to subscribe to a channel.
 Also, a Wire connection is attached to a player identity (see [Authentication](#authentication)),
 and any subscription token provided during a Wire centrifuge session, will be checked so that the
-player identity matches.  
+player identity matches.
 The subscription token is provided in the `token` field of the [SubscribeRequest](#subscriberequest-diagram)
 object passed in the subscribe [Command](#command-and-reply).
 
@@ -332,7 +332,7 @@ Reply --> `UnsubscribeResult`
 classDiagram
 direction LR
 
-%% 
+%%
 
 class Error {
   + uint32 code
@@ -361,7 +361,7 @@ Push --> `Unsubscribe`
 classDiagram
 direction LR
 
-%% 
+%%
 
 class ClientInfo {
   + bytes chan_info
@@ -376,7 +376,7 @@ class ClientInfo {
 classDiagram
 direction LR
 
-%% 
+%%
 
 class Publication {
   + WireMessage data
@@ -406,7 +406,7 @@ class WireMessage {
 classDiagram
 direction LR
 
-%% 
+%%
 
 class Unsubscribe {
   + uint32 code
@@ -419,7 +419,7 @@ class Unsubscribe {
 classDiagram
 direction LR
 
-%% 
+%%
 
 class ConnectRequest {
   + bytes data
@@ -436,7 +436,7 @@ ConnectRequest .. ` SubscribeRequest`
 classDiagram
 direction LR
 
-%% 
+%%
 
 class ConnectResult {
   + string client
@@ -458,7 +458,7 @@ ConnectResult .. ` SubscribeResult`
 classDiagram
 direction LR
 
-%% 
+%%
 
 class SubscribeRequest {
   + string channel
@@ -478,7 +478,7 @@ class SubscribeRequest {
 classDiagram
 direction LR
 
-%% 
+%%
 
 class SubscribeResult {
   + bytes data
@@ -500,7 +500,7 @@ SubscribeResult --> `Publication`
 classDiagram
 direction LR
 
-%% 
+%%
 
 class UnsubscribeRequest {
   + string channel
@@ -512,7 +512,7 @@ class UnsubscribeRequest {
 classDiagram
 direction LR
 
-%% 
+%%
 
 class UnsubscribeResult { }
 
@@ -522,7 +522,7 @@ class UnsubscribeResult { }
 classDiagram
 direction LR
 
-%% 
+%%
 
 class PingRequest { }
 
@@ -532,7 +532,7 @@ class PingRequest { }
 classDiagram
 direction LR
 
-%% 
+%%
 
 class PingResult { }
 

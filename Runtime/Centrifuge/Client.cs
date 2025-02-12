@@ -45,15 +45,17 @@ namespace Unity.Services.Wire.Internal
 
         bool m_Pong = false;
         UInt32 m_ServerPingIntervalS = 0;
+        TimeSpan m_NetworkCheckInterval = TimeSpan.FromSeconds(5d);
         IActionScheduler m_ActionScheduler;
         long m_PingDeadlineScheduledId = 0;
+        long m_ReconnectionActionId = 0;
 
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
                       IUnityThreadUtils threadUtils, IWebsocketFactory websocketFactory)
         {
             k_PongMessage = Encoding.UTF8.GetBytes("{}");
             m_ThreadUtils = threadUtils;
-            m_Config = config;
+            m_Config = InitNetworkUtil(config);
             m_Metrics = metrics;
             m_ActionScheduler = actionScheduler;
             m_WebsocketFactory = websocketFactory;
@@ -65,9 +67,20 @@ namespace Unity.Services.Wire.Internal
             };
             m_Backoff = new ExponentialBackoffStrategy();
             m_CommandManager = new CommandManager(config, actionScheduler);
+
 #if UNITY_EDITOR
             EditorApplication.playModeStateChanged += PlayModeStateChanged;
 #endif
+        }
+
+        internal Configuration InitNetworkUtil(Configuration config)
+        {
+            if (config.NetworkUtil == null)
+            {
+                config.NetworkUtil = new NetworkUtil(); // Default impl
+            }
+
+            return config;
         }
 
 #if UNITY_EDITOR
@@ -79,7 +92,9 @@ namespace Unity.Services.Wire.Internal
                 {
                     return;
                 }
+
                 Logger.Log("Exiting playmode, disconnecting, and cleaning subscription repo.");
+
                 await DisconnectAsync();
 
                 foreach (var sub in SubscriptionRepository.GetAll())
@@ -158,6 +173,11 @@ namespace Unity.Services.Wire.Internal
 
         internal async Task DisconnectAsync()
         {
+            if (m_ReconnectionActionId > 0)
+            {
+                m_ActionScheduler.CancelAction(m_ReconnectionActionId);
+            }
+
             if (m_DisconnectionCompletionSource != null)
             {
                 await m_DisconnectionCompletionSource.Task;
@@ -190,6 +210,12 @@ namespace Unity.Services.Wire.Internal
 
         public async Task ConnectAsync()
         {
+            if (m_ReconnectionActionId > 0) // Accounting for unit tests
+            {
+                m_ActionScheduler.CancelAction(m_ReconnectionActionId);
+                m_ReconnectionActionId = 0;
+            }
+
             Logger.Log("Connection initiated. Checking state prior to connection.");
             while (m_ConnectionState == ConnectionState.Disconnecting)
             {
@@ -211,6 +237,7 @@ namespace Unity.Services.Wire.Internal
             }
 
             ChangeConnectionState(ConnectionState.Connecting);
+
             m_WantConnected = true;
 
             // initialize websocket object
@@ -292,6 +319,7 @@ namespace Unity.Services.Wire.Internal
             {
                 return;
             }
+
             Logger.LogError("The connection to the server stalled. Disconnecting.");
             m_WebsocketClient.Close();
         }
@@ -306,7 +334,6 @@ namespace Unity.Services.Wire.Internal
             foreach (var message in messages)
             {
                 var reply = Reply.FromJson(message);
-
                 if (reply.id > 0)
                 {
                     HandleCommandReply(reply);
@@ -368,19 +395,51 @@ namespace Unity.Services.Wire.Internal
 
                 if (m_WantConnected && ShouldReconnect(code))
                 {
-                    // TokenVerificationFailed is a special Wire custom error that happens when the token verification failed on server side
-                    // to prevent any rate limitation on UAS the server will wait a specified amount of time before retrying therefore it's useless
-                    // to try again too early from the client.
+                    if (m_Config.NetworkUtil.IsInternetReachable() == false)
+                    {
+                        Logger.LogWarning($"Internet is currently unreachable, will check again in {m_NetworkCheckInterval.TotalSeconds} seconds.");
+                        m_WantConnected = false;
+                        m_ReconnectionActionId = m_ActionScheduler.ScheduleAction(() => _ = CheckNetworkState(m_NetworkCheckInterval), m_NetworkCheckInterval.TotalSeconds);
+                        return;
+                    }
+
+                    // TokenVerificationFailed is a special Wire custom error that happens when the token verification failed on server side to prevent any rate limitation on UAS;
+                    // the server will wait a specified amount of time before retrying therefore it's useless to try again too early from the client.
                     var secondsUntilNextAttempt = (int)originalCode == 4333 ? 10.0f : m_Backoff.GetNext(); // TODO: get rid of the cast when the close code gets public
-                    Logger.Log($"Retrying websocket connection in : {secondsUntilNextAttempt} s");
-                    await Task.Delay(TimeSpan.FromSeconds(secondsUntilNextAttempt));
-                    await ConnectAsync();
+                    Logger.Log($"Retrying websocket connection in {secondsUntilNextAttempt} seconds.");
+                    m_ActionScheduler.ScheduleAction(() => _ = ConnectAsync(), secondsUntilNextAttempt);
                 }
             }
             catch (Exception e)
             {
                 Logger.LogException(e);
             }
+        }
+
+        internal long CheckNetworkState(TimeSpan duration)
+        {
+            var minDuration = TimeSpan.FromSeconds(1d);
+            if (duration < minDuration)
+            {
+                duration = minDuration;
+            }
+
+            if (m_Config.NetworkUtil.IsInternetReachable())
+            {
+                Logger.Log("Internet is reachable, connect again..");
+                if (m_ReconnectionActionId > 0)
+                {
+                    m_ActionScheduler.CancelAction(m_ReconnectionActionId);
+                }
+                m_ReconnectionActionId = 0;
+                _ = ConnectAsync();
+                return m_ReconnectionActionId;
+            }
+
+            // Consciously using Action Scheduler instead of tasks (and related classes)
+            // to eventually provide better WebGL support.
+            Logger.Log($"Internet remains unreachable, check again in {duration.TotalSeconds} seconds..");
+            return m_ActionScheduler.ScheduleAction(() => _ = CheckNetworkState(duration), duration.TotalSeconds);
         }
 
         private void InitWebsocket()

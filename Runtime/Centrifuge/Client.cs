@@ -112,10 +112,11 @@ namespace Unity.Services.Wire.Internal
 
         async Task<Reply> SendCommandAsync(UInt32 id, Command command)
         {
-            if (m_Disabled || !m_WantConnected) return null;
+            if (m_Disabled || !m_WantConnected)
+                return null;
 
             var time = DateTime.Now;
-            var tags = new Dictionary<string, string> {{"method", command.GetMethod()}};
+            var tags = new Dictionary<string, string> { { "method", command.GetMethod() } };
             m_CommandManager.RegisterCommand(id);
 
             if (m_WebsocketClient.GetState() != WebSocketState.Open)
@@ -155,13 +156,14 @@ namespace Unity.Services.Wire.Internal
             {
                 return;
             }
+
             m_ThreadUtils.Send(async() =>
             {
                 try
                 {
                     var connect = !string.IsNullOrEmpty(m_Config.token.AccessToken);
                     var action = connect ? "reconnect" : "disconnect";
-                    Logger.Log($"PlayerID changed to [{ playerId }], next action: { action }");
+                    Logger.Log($"PlayerID changed to [{playerId}], next action: {action}");
                     await ResetAsync(connect);
                 }
                 catch (Exception e)
@@ -171,7 +173,7 @@ namespace Unity.Services.Wire.Internal
             });
         }
 
-        internal async Task DisconnectAsync()
+        internal Task DisconnectAsync()
         {
             if (m_ReconnectionActionId > 0)
             {
@@ -180,21 +182,21 @@ namespace Unity.Services.Wire.Internal
 
             if (m_DisconnectionCompletionSource != null)
             {
-                await m_DisconnectionCompletionSource.Task;
-                return;
+                return m_DisconnectionCompletionSource.Task;
             }
 
             m_WantConnected = false;
             if (m_WebsocketClient == null)
             {
                 ChangeConnectionState(ConnectionState.Disconnected);
-                return;
+                return Task.CompletedTask;
             }
 
             m_DisconnectionCompletionSource = new TaskCompletionSource<ConnectionState>();
             ChangeConnectionState(ConnectionState.Disconnecting);
             m_WebsocketClient.Close();
-            await m_DisconnectionCompletionSource.Task;
+            m_WebsocketClient = null; // dispose the current ws client
+            return m_DisconnectionCompletionSource.Task;
         }
 
         internal async Task ResetAsync(bool reconnect)
@@ -216,23 +218,24 @@ namespace Unity.Services.Wire.Internal
                 m_ReconnectionActionId = 0;
             }
 
+            if (m_ConnectionState == ConnectionState.Connected)
+            {
+                Logger.Log("Already connected.");
+                return;
+            }
+
             Logger.Log("Connection initiated. Checking state prior to connection.");
-            while (m_ConnectionState == ConnectionState.Disconnecting)
+            if (m_ConnectionState == ConnectionState.Disconnecting)
             {
                 Logger.Log(
                     "Disconnection already in progress. Waiting for disconnection to complete before proceeding.");
                 await m_DisconnectionCompletionSource.Task;
             }
 
-            while (m_ConnectionState == ConnectionState.Connecting)
+            if (m_ConnectionState == ConnectionState.Connecting)
             {
                 Logger.Log("Connection already in progress. Waiting for connection to complete.");
                 await m_ConnectionCompletionSource.Task;
-            }
-
-            if (m_ConnectionState == ConnectionState.Connected)
-            {
-                Logger.Log("Already connected.");
                 return;
             }
 
@@ -246,6 +249,7 @@ namespace Unity.Services.Wire.Internal
             // Connect to the websocket server
             Logger.Log($"Attempting connection on: {m_Config.address}");
             m_WebsocketClient.Connect();
+
             await m_ConnectionCompletionSource.Task;
         }
 
@@ -259,6 +263,7 @@ namespace Unity.Services.Wire.Internal
                 {
                     throw new EmptyTokenException();
                 }
+
                 var request = new ConnectRequest(m_Config.token.AccessToken, subscriptionRequests);
                 var command = new Command(request);
                 Reply reply;
@@ -280,13 +285,13 @@ namespace Unity.Services.Wire.Internal
                     m_ConnectionCompletionSource.TrySetException(
                         new ConnectionFailedException(
                             $"Socket closed during connection attempt: {exception.m_Code}"));
-                    m_WebsocketClient.Close();
+                    m_WebsocketClient?.Close();
                 }
                 catch (Exception exception)
                 {
                     // Unknown exception caught during connection
                     m_ConnectionCompletionSource.TrySetException(exception);
-                    m_WebsocketClient.Close();
+                    m_WebsocketClient?.Close();
                 }
             }
             catch (Exception e)
@@ -355,6 +360,9 @@ namespace Unity.Services.Wire.Internal
                 }
                 else
                 {
+                    Logger.Log("Handling Server Ping");
+                    Logger.Log($"Message was: {message}");
+
                     // this is a server Ping `{}`
                     HandleServerPing();
                 }
@@ -366,8 +374,20 @@ namespace Unity.Services.Wire.Internal
             CancelPingDeadline();
             if (m_Pong)
             {
-                m_WebsocketClient.Send(k_PongMessage);
+                try
+                {
+                    Logger.Log("Sending Pong Message...");
+                    m_WebsocketClient.Send(k_PongMessage);
+                }
+                catch (WebSocketInvalidStateException)
+                {
+                    Logger.LogWarning("Pong signal could not be sent to server!\r\n" +
+                        "This may be due to the application being inactive for an extended period of time.\r\n" +
+                        "Will attempt to re-establish connection.");
+                    return; //no need to continue
+                }
             }
+
             SetupPingDeadline();
         }
 
@@ -377,7 +397,7 @@ namespace Unity.Services.Wire.Internal
             Logger.LogError($"Websocket connection error: {msg}");
         }
 
-        internal async void OnWebsocketClose(WebSocketCloseCode originalCode)
+        internal void OnWebsocketClose(WebSocketCloseCode originalCode)
         {
             try
             {
@@ -431,6 +451,7 @@ namespace Unity.Services.Wire.Internal
                 {
                     m_ActionScheduler.CancelAction(m_ReconnectionActionId);
                 }
+
                 m_ReconnectionActionId = 0;
                 _ = ConnectAsync();
                 return m_ReconnectionActionId;
@@ -454,15 +475,19 @@ namespace Unity.Services.Wire.Internal
                 m_WebsocketClient.OnError -= WebsocketErrorListener;
                 m_WebsocketClient.OnClose -= WebsocketCloseListener;
             }
+
             // use the eventual websocket override instead of the default one
             m_WebsocketClient = m_WebsocketFactory.CreateInstance(m_Config.address);
 
             //  Add OnOpen event listener
             m_WebsocketClient.OnOpen += WebsocketOpenListener;
+
             // Add OnMessage event listener
             m_WebsocketClient.OnMessage += WebsocketMessageListener;
+
             // Add OnError event listener
             m_WebsocketClient.OnError += WebsocketErrorListener;
+
             // Add OnClose event listener
             m_WebsocketClient.OnClose += WebsocketCloseListener;
         }
@@ -510,7 +535,7 @@ namespace Unity.Services.Wire.Internal
 
         void ChangeConnectionState(ConnectionState state)
         {
-            var tags = new Dictionary<string, string> {{"state", state.ToString()}, };
+            var tags = new Dictionary<string, string> { { "state", state.ToString() }, };
             m_Metrics.SendSumMetric("connection_state_change", 1, tags);
             m_ConnectionState = state;
             switch (state)
@@ -543,7 +568,7 @@ namespace Unity.Services.Wire.Internal
         // Handle push actions emitted from the server
         void HandlePushMessage(Push push)
         {
-            var tags = new Dictionary<string, string> {{"push_type", push.GetPushType()}};
+            var tags = new Dictionary<string, string> { { "push_type", push.GetPushType() } };
             m_Metrics.SendSumMetric("push_received", 1, tags);
 
             if (push.IsUnsub())
@@ -554,6 +579,7 @@ namespace Unity.Services.Wire.Internal
                     subscription.OnKickReceived();
                     SubscriptionRepository.RemoveSub(subscription);
                 }
+
                 // we temporarily disable logging the subscription not found error
                 // here because we saw the server can send those sometimes. We might
                 // replug it later if we fix the issue on the server
@@ -581,13 +607,15 @@ namespace Unity.Services.Wire.Internal
         // Handle replies from commands issued by the client
         void HandleCommandReply(Reply reply)
         {
+            Logger.Log("Handle Command Reply");
             m_CommandManager.OnCommandReplyReceived(reply);
         }
 
         async Task SubscribeAsync(Subscription subscription)
         {
             // we should ignore calls to this function if Wire has been disabled
-            if (m_Disabled) return;
+            if (m_Disabled)
+                return;
 
             if (m_ConnectionState != ConnectionState.Connected)
             {
@@ -605,8 +633,10 @@ namespace Unity.Services.Wire.Internal
                     Logger.Log("Could not subscribe, issue while trying to connect. Subscription will resume when a connection is made.");
                     Logger.LogException(e);
                 }
+
                 await tcs.Task;
             }
+
             try
             {
                 var token = await subscription.RetrieveTokenAsync();
@@ -617,10 +647,7 @@ namespace Unity.Services.Wire.Internal
                 }
 
                 var recover = SubscriptionRepository.IsRecovering(subscription);
-                var request = new SubscribeRequest
-                {
-                    channel = subscription.Channel, token = token, recover = recover, offset = subscription.Offset
-                };
+                var request = new SubscribeRequest { channel = subscription.Channel, token = token, recover = recover, offset = subscription.Offset };
                 var command = new Command(request);
                 var reply = await SendCommandAsync(command.id, command);
 
@@ -691,14 +718,15 @@ namespace Unity.Services.Wire.Internal
         {
             // we should ignore calls to this function if Wire has been disconnected, it means the lifecycle of the Wire
             // connection has terminated
-            if (!m_WantConnected || m_Disabled) return;
+            if (!m_WantConnected || m_Disabled)
+                return;
 
             if (!SubscriptionRepository.IsAlreadySubscribed(subscription))
             {
                 throw new AlreadyUnsubscribedException(subscription.Channel);
             }
 
-            var request = new UnsubscribeRequest {channel = subscription.Channel, };
+            var request = new UnsubscribeRequest { channel = subscription.Channel, };
 
             var command = new Command(request);
             await SendCommandAsync(command.id, command);

@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-06-09
+
+### Fixed
+
+- Fixed WebSocketInvalidStateException raised when disconnecting, closing an already opened socket
+- Fixed Wire occasionally using attempting to parse addresses as IPV6 on latfomrsm that do not support IPV6
+- Fixed error getting thrown when application returns from sleep due to unhandled server ping request. (Not applicable to WebGL.)
+
 ## [1.3.0] - 2025-02-12
 
 ### Fixed
@@ -11,6 +19,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Updated dyncall syntax
 - Websocket jslib will no longer crash player loop on successive connections/disconnections
 - Updated reconnection logic to check if internet is reachable, avoiding unnecessary connection attempts
+
+## [1.2.8] - 2025-01-15
+
+### Fixed
+
+- Updated package docs to reflect the removal of `WIRE_EXCLUDE_WEBSOCKETSHARP` in v1.2.2
 
 ### Changed
 

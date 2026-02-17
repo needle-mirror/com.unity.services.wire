@@ -10,3 +10,4 @@ using UnityEngine.Scripting;
 
 [assembly: InternalsVisibleTo("Unity.Services.Wire.Internal")]
 [assembly: InternalsVisibleTo("Unity.Services.Wire.Tests")]
+[assembly: InternalsVisibleTo("Unity.Services.Wire.EditorTests")]

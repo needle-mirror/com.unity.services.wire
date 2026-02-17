@@ -41,13 +41,11 @@
 #endregion
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Globalization;
 using System.IO;
 using System.Security.Principal;
 using System.Text;
+using UnityEngine;
 
 namespace UnityWebSocketSharp.Net
 {
@@ -65,10 +63,27 @@ namespace UnityWebSocketSharp.Net
 
         static HttpUtility()
         {
-            _hexChars = "0123456789ABCDEF".ToCharArray();
-            _sync = new object();
+            Initialize();
         }
 
+        private static void Initialize()
+        {
+            _hexChars = "0123456789ABCDEF".ToCharArray();
+            _sync = new object();
+            _entities = default;
+        }
+
+        #endregion
+
+        #region Reset static fields for FastEnterPlayMode
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod]
+        private static void ResetStaticsOnLoad()
+        {
+            Initialize();
+        }
+
+#endif
         #endregion
 
         #region Private Methods

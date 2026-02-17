@@ -1,0 +1,12 @@
+{
+  "flags" : {
+    "FEATURE_INTERNAL_DOCS": {
+      "removeFeature": true,
+      "removals": [
+        "Documentation~/Internal/**",
+        "Documentation~/Internal",
+        "Documentation~/Internal.meta"
+      ]
+    }
+  }
+}

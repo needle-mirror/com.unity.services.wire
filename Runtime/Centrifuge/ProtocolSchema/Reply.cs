@@ -22,6 +22,12 @@ namespace Unity.Services.Wire.Protocol.Internal
         [JsonIgnore]
         public string originalString = "";
 
+        static JsonSerializerSettings m_SerializerSettings = new()
+        {
+            DefaultValueHandling = DefaultValueHandling.Ignore,
+            Formatting = Formatting.None
+        };
+
         [Preserve]
         public Reply() {}
 
@@ -87,6 +93,11 @@ namespace Unity.Services.Wire.Protocol.Internal
         public byte[] ToJson()
         {
             return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this));
+        }
+
+        public override string ToString()
+        {
+            return JsonConvert.SerializeObject(this, Formatting.Indented, m_SerializerSettings);
         }
 
         public bool HasError()

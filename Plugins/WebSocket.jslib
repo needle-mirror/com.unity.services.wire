@@ -274,7 +274,13 @@ var LibraryWebSocket = {
 		if (instance.ws.readyState !== 1)
 			return -6;
 
+#if USE_PTHREADS
+		var buffer = new Uint8Array(length);
+		buffer.set(HEAPU8.subarray(bufferPtr, bufferPtr + length));
+		instance.ws.send(buffer);
+#else
 		instance.ws.send(HEAPU8.buffer.slice(bufferPtr, bufferPtr + length));
+#endif
 
 		return 0;
 

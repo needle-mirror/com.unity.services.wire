@@ -1402,6 +1402,7 @@ namespace UnityWebSocketSharp
 
             if (send)
             {
+                _log.Debug("Sending a closing frame to the server.");
                 var frame = WebSocketFrame.CreateCloseFrame(payloadData, _client);
                 var bytes = frame.ToArray();
 
@@ -1418,12 +1419,7 @@ namespace UnityWebSocketSharp
 
             var ret = sent && received;
 
-            var msg = String.Format(
-                "The closing was clean? {0} (sent: {1} received: {2})",
-                ret,
-                sent,
-                received
-            );
+            var msg = $"The closing was clean? {ret} (sent: {sent} received: {received})";
 
             _log.Debug(msg);
 
@@ -2101,6 +2097,7 @@ namespace UnityWebSocketSharp
         {
             if (_stream != null)
             {
+                _log.Trace("Disposing underlying stream.");
                 _stream.Dispose();
 
                 _stream = null;
@@ -2337,6 +2334,7 @@ namespace UnityWebSocketSharp
         private HttpResponse sendHandshakeRequest()
         {
             var req = createHandshakeRequest();
+            _log.Trace("Handshake request created.");
 
             var timeout = 90000;
             var res = req.GetResponse(_stream, timeout);

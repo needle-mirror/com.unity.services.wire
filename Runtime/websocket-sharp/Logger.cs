@@ -61,6 +61,7 @@ namespace UnityWebSocketSharp
         private volatile LogLevel       _level;
         private Action<LogData, string> _output;
         private object                  _sync;
+        private const string k_LogTag = "[Wire - ws#]";
 
         #endregion
 
@@ -73,7 +74,11 @@ namespace UnityWebSocketSharp
         /// This constructor initializes the logging level with the Error level.
         /// </remarks>
         public Logger()
+#if ENABLE_UNITY_WIRE_VERBOSE_LOGGING
+            : this(LogLevel.Trace, null, null)
+#else
             : this(LogLevel.Error, null, null)
+#endif
         {
         }
 
@@ -204,11 +209,28 @@ namespace UnityWebSocketSharp
 
         #region Private Methods
 
-        private static void defaultOutput(LogData data, string path)
+        private void defaultOutput(LogData data, string path)
         {
             var val = data.ToString();
 
-            Console.WriteLine(val);
+            switch (data.Level)
+            {
+                case LogLevel.None:
+                    break;
+                case LogLevel.Warn when _level >= LogLevel.Warn:
+                    UnityEngine.Debug.unityLogger.LogWarning(k_LogTag, val);
+                    break;
+                case LogLevel.Fatal when _level >= LogLevel.Fatal:
+                case LogLevel.Error when _level >= LogLevel.Error:
+                    UnityEngine.Debug.unityLogger.LogError(k_LogTag, val);
+                    break;
+                case LogLevel.Trace when _level >= LogLevel.Trace:
+                case LogLevel.Debug when _level >= LogLevel.Debug:
+                case LogLevel.Info when _level >= LogLevel.Info:
+                default:
+                    UnityEngine.Debug.unityLogger.Log(k_LogTag, val);
+                    break;
+            }
 
             if (path != null && path.Length > 0)
                 writeToFile(val, path);
@@ -228,11 +250,7 @@ namespace UnityWebSocketSharp
                 }
                 catch (Exception ex)
                 {
-                    var data = new LogData(
-                        LogLevel.Fatal, new StackFrame(0, true), ex.Message
-                    );
-
-                    Console.WriteLine(data.ToString());
+                    UnityEngine.Debug.unityLogger.LogException(ex);
                 }
             }
         }

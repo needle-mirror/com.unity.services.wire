@@ -1,23 +1,32 @@
 using System;
 using System.Text;
 using Newtonsoft.Json;
+using Unity.Services.Wire.Internal;
 using UnityEngine.Scripting;
-using Logger = Unity.Services.Wire.Internal.Logger;
 
 namespace Unity.Services.Wire.Protocol.Internal
 {
     [JsonObject(ItemNullValueHandling = NullValueHandling.Ignore)]
     class Command
     {
+        internal const string k_CONNECT = "CONNECT";
+        internal const string k_SUBSCRIBE = "SUBSCRIBE";
+        internal const string k_UNSUBSCRIBE = "UNSUBSCRIBE";
+        internal const string k_PING = "PING";
+        internal const string k_UNKNOWN = "UNKNOWN";
+
         public UInt32 id;
         public ConnectRequest connect;
         public SubscribeRequest subscribe;
+
         public UnsubscribeRequest unsubscribe;
+
         // missing requests here (not implemented/necessary for Wire)
         public PingRequest ping;
 
         [Preserve]
         public Command() {}
+
         public Command(PingRequest request)
         {
             id = CommandID.GenerateNewId();
@@ -52,9 +61,15 @@ namespace Unity.Services.Wire.Protocol.Internal
             return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this, Formatting.None));
         }
 
+        static readonly JsonSerializerSettings MaskedTokenSettings =  new()
+        {
+            ContractResolver = new MaskedTokenContractResolver(),
+            Formatting = Formatting.None
+        };
+
         public new string ToString()
         {
-            return JsonConvert.SerializeObject(this, Formatting.None);
+            return JsonConvert.SerializeObject(this, MaskedTokenSettings);
         }
 
         internal bool IsPing()
@@ -66,25 +81,20 @@ namespace Unity.Services.Wire.Protocol.Internal
         {
             if (connect != null)
             {
-                return "CONNECT";
+                return k_CONNECT;
             }
 
             if (subscribe != null)
             {
-                return "SUBSCRIBE";
+                return k_SUBSCRIBE;
             }
 
             if (unsubscribe != null)
             {
-                return "UNSUBSCRIBE";
+                return k_UNSUBSCRIBE;
             }
 
-            if (ping != null)
-            {
-                return "PING";
-            }
-
-            return "UNKNOWN";
+            return IsPing() ? k_PING : k_UNKNOWN;
         }
     }
 }

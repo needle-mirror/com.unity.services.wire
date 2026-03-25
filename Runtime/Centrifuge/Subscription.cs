@@ -68,6 +68,7 @@ namespace Unity.Services.Wire.Internal
             if (m_State != state)
             {
                 m_State = state;
+                Logger.LogWarning($"[Sub] {Channel} connectivity - {m_State}");
                 NewStateReceived?.Invoke(m_State);
             }
         }
@@ -196,8 +197,31 @@ namespace Unity.Services.Wire.Internal
             return completionSource.Task;
         }
 
+        public async Task<SubscribeRequest> GetReconnectSubscribeRequest(ISubscriptionRepository repository)
+        {
+            string subscriptionToken;
+            try
+            {
+                subscriptionToken = await RetrieveTokenAsync();
+            }
+            catch (Exception e)
+            {
+                OnError($"Failed to retrieve token: {e.Message}");
+                return null;
+            }
+
+            return new SubscribeRequest
+            {
+                recover = repository.IsRecovering(this),
+                token = subscriptionToken,
+                channel = Channel,
+                offset = Offset,
+            };
+        }
+
         internal void OnError(string reason)
         {
+            Logger.LogWarning($"[Sub] {Channel} error - {reason}");
             SubscriptionState = SubscriptionState.Error;
             ErrorReceived?.Invoke(reason);
         }

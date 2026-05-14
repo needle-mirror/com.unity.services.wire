@@ -778,7 +778,6 @@ namespace Unity.Services.Wire.Internal
 
             int instanceId = WebSocketAllocate(url);
             WebSocket wrapper = new WebSocket(instanceId);
-            instances.Clear(); // We no longer support maintaining multiple instances.
             instances.Add(instanceId, wrapper);
             return wrapper;
 #else

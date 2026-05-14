@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "unity": "2021.3",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -21,18 +21,18 @@
       "Switch",
       "WebGL"
     ],
-    "changelog": "### Fixed\n\n- Fixed wire channel subscriptions recovery when applications are returning from deep sleep.\n- Ensure package can work with multithreaded WebGL builds."
+    "changelog": "### Fixed\n\n- Fixed wire failing to connect on WebGL when using multiple UnityServices instances."
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.4.3"
+    "com.unity.services.wire.tests": "1.4.4"
   },
   "upmCi": {
-    "footprint": "f3d99d2d964d4705b9494c8ec07efa8b2ef4ea69"
+    "footprint": "b76ee16d997bbece920b24b02433a73f9284ec87"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.services.wire@1.4/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "ef46d64f59b0b843aa535cdabd312c1857bf0c99"
+    "revision": "a9e368ca4cc2dd754b2b5eed9e1b8e95826ead80"
   }
 }

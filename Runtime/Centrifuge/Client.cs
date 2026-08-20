@@ -40,6 +40,7 @@ namespace Unity.Services.Wire.Internal
         readonly IWebsocketFactory m_WebsocketFactory;
 
         event Action m_OnConnected;
+        event Action<Exception> m_OnConnectionAborted;
 
         internal bool m_WantConnected = false;
 
@@ -297,8 +298,21 @@ namespace Unity.Services.Wire.Internal
                 try
                 {
                     var reply = await SendCommandAsync(command.id, command);
+                    if (reply == null)
+                    {
+                        // SendCommandAsync returns null when the client is disabled or a disconnect
+                        // cleared m_WantConnected while this open callback was queued on the main
+                        // thread. Nothing to recover — abort the handshake.
+                        throw new ConnectionFailedException("Wire connection aborted before the handshake completed.");
+                    }
                     m_Backoff.Reset();
                     SubscriptionRepository.RecoverSubscriptions(reply);
+                    if (reply.connect == null)
+                    {
+                        // A connect reply with no connect result means the handshake did not
+                        // succeed (e.g. an error reply). Fail cleanly instead of dereferencing null.
+                        throw new ConnectionFailedException("Connect reply contained no connect result.");
+                    }
                     ChangeConnectionState(ConnectionState.Connected);
 
                     // ping pong
@@ -332,6 +346,9 @@ namespace Unity.Services.Wire.Internal
             catch (Exception e)
             {
                 Logger.LogException(e);
+                m_ConnectionCompletionSource?.TrySetException(e);
+                m_OnConnectionAborted?.Invoke(e);
+                m_WebsocketClient?.Close();
             }
 
             Resubscribe(subscriptions);
@@ -438,10 +455,19 @@ namespace Unity.Services.Wire.Internal
             CancelPingDeadline();
             if (m_Pong)
             {
+                // Read m_WebsocketClient once: DisconnectAsync can null it from the disconnect
+                // path between this null check and the Send below, so snapshot it into a local.
+                var websocketClient = m_WebsocketClient;
+                if (websocketClient == null)
+                {
+                    // Ping was processed on the main thread after the connection was torn down.
+                    Logger.Log("Server ping received after disconnect; skipping pong.");
+                    return;
+                }
                 try
                 {
                     Logger.Log("Sending Pong Message...");
-                    m_WebsocketClient.Send(k_PongMessage);
+                    websocketClient.Send(k_PongMessage);
                 }
                 catch (WebSocketInvalidStateException)
                 {
@@ -497,6 +523,10 @@ namespace Unity.Services.Wire.Internal
                     var secondsUntilNextAttempt = (int)originalCode == 4333 ? 10.0f : m_Backoff.GetNext(); // TODO: get rid of the cast when the close code gets public
                     Logger.Log($"Retrying websocket connection in {secondsUntilNextAttempt} seconds.");
                     m_ActionScheduler.ScheduleAction(() => _ = ConnectAsync(), secondsUntilNextAttempt);
+                }
+                else if (m_WantConnected || m_Disabled)
+                {
+                    m_OnConnectionAborted?.Invoke(new ConnectionFailedException($"Wire received terminal close code: {code}"));
                 }
             }
             catch (Exception e)
@@ -688,22 +718,7 @@ namespace Unity.Services.Wire.Internal
 
             if (m_ConnectionState != ConnectionState.Connected)
             {
-                var tcs = new TaskCompletionSource<bool>();
-                m_OnConnected += () =>
-                {
-                    tcs.SetResult(true);
-                };
-                try
-                {
-                    await ConnectAsync();
-                }
-                catch (Exception e)
-                {
-                    Logger.Log("Could not subscribe, issue while trying to connect. Subscription will resume when a connection is made.");
-                    Logger.LogException(e);
-                }
-
-                await tcs.Task;
+                await WaitForConnectionAsync();
             }
 
             try
@@ -726,6 +741,40 @@ namespace Unity.Services.Wire.Internal
             {
                 subscription.OnError($"Subscription failed: {exception.Message}");
                 throw;
+            }
+        }
+
+        internal async Task WaitForConnectionAsync()
+        {
+            if (m_ConnectionState == ConnectionState.Connected)
+                return;
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            void onConnected() => tcs.TrySetResult(true);
+            void onAborted(Exception e) => tcs.TrySetException(
+                new ConnectionFailedException("Wire connection terminally failed before subscribe", e));
+
+            m_OnConnected += onConnected;
+            m_OnConnectionAborted += onAborted;
+            try
+            {
+                try
+                {
+                    await ConnectAsync();
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                    throw new ConnectionFailedException("Wire connection failed during ConnectAsync", e);
+                }
+
+                await tcs.Task;
+            }
+            finally
+            {
+                m_OnConnected -= onConnected;
+                m_OnConnectionAborted -= onAborted;
             }
         }
 

@@ -4,6 +4,18 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-20
+
+### Changed
+
+- Bumped the minimum supported Unity Editor version from 2021.3 to 6000.0.
+
+### Fixed
+
+- Fixed `Client.SubscribeAsync` hanging indefinitely when wire receives a terminal close code or fails the websocket open handshake.
+- Fixed native crashes on PS5 (IL2CPP) caused by unguarded null dereferences of `reply.connect` during subscription recovery and the connect handshake.
+- Fixed a crash in server-ping handling when the connection is disconnected concurrently, by null-checking the websocket client before sending the pong.
+
 ## [1.4.4] - 2026-05-14
 
 ### Fixed

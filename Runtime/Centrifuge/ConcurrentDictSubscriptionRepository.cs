@@ -137,8 +137,8 @@ namespace Unity.Services.Wire.Internal
         // (subscriptions that are made through the connection command)
         public void RecoverSubscriptions(Reply reply)
         {
-            var res = reply.connect;
-            if (res.subs?.Count > 0)
+            var res = reply?.connect;
+            if (res?.subs?.Count > 0)
             {
                 foreach (var subIterator in res.subs)
                 {

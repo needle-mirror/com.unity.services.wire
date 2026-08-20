@@ -112,5 +112,8 @@ namespace Unity.Services.Wire.Internal
     {
         /// <inheritdoc cref="ConnectionFailedException"/>
         public ConnectionFailedException(string reason) : base((int)WireErrorCode.ConnectionFailed, $"Connection failed: {reason}.") {}
+
+        /// <inheritdoc cref="ConnectionFailedException"/>
+        public ConnectionFailedException(string reason, Exception innerException) : base((int)WireErrorCode.ConnectionFailed, $"Connection failed: {reason}.", innerException) {}
     }
 }

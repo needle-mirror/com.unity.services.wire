@@ -60,6 +60,7 @@ namespace Unity.Services.Wire.Internal
     public class ConnectionFailedException : Unity.Services.Core.RequestFailedException
     {
         public ConnectionFailedException(string reason) {}
+        public ConnectionFailedException(string reason, System.Exception innerException) {}
     }
 
     public class EmptyChannelException : Unity.Services.Core.RequestFailedException

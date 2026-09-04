@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "unity": "6000.0",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -21,18 +21,18 @@
       "Switch",
       "WebGL"
     ],
-    "changelog": "### Changed\n\n- Bumped the minimum supported Unity Editor version from 2021.3 to 6000.0.\n\n### Fixed\n\n- Fixed `Client.SubscribeAsync` hanging indefinitely when wire receives a terminal close code or fails the websocket open handshake.\n- Fixed native crashes on PS5 (IL2CPP) caused by unguarded null dereferences of `reply.connect` during subscription recovery and the connect handshake.\n- Fixed a crash in server-ping handling when the connection is disconnected concurrently, by null-checking the websocket client before sending the pong."
+    "changelog": "### Changed\n\n- Ungated package for use in Cloud Code 3.0.0 GA release"
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.5.0"
+    "com.unity.services.wire.tests": "1.5.1"
   },
   "upmCi": {
-    "footprint": "b52861eea9499005b34314de12a4e4718bc46418"
+    "footprint": "ec8568859dd32ede8adda4bd6def39ff04fd8543"
   },
   "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.services.wire@1.5/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "e1bcd0c966e0788311a1fbdc811a023b9acf8fd4"
+    "revision": "17144d0f3790d89f832441d5fbbf61e750c193a7"
   }
 }

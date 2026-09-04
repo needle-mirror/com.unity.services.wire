@@ -8,7 +8,7 @@ using Unity.Services.Core.Scheduler.Internal;
 using Unity.Services.Core.Threading.Internal;
 using Unity.Services.Core.Telemetry.Internal;
 using UnityEngine;
-#if UNITY_EDITOR && UNITY_SERVICES_CLOUDCODE_EXPERIMENTAL
+#if UNITY_EDITOR
 using UnityEditor;
 #endif
 
@@ -18,7 +18,7 @@ namespace Unity.Services.Wire.Internal
     {
         const string k_CloudEnvironmentKey = "com.unity.services.core.cloud-environment";
         const string k_StagingEnvironment = "staging";
-#if UNITY_EDITOR && UNITY_SERVICES_CLOUDCODE_EXPERIMENTAL
+#if UNITY_EDITOR
         const string k_LocalCloudCodePidPrefs = "LOCAL_CLOUD_CODE_PID";
         const ushort k_DefaultLocalCloudCodeServerPort = 5000;
 #endif
@@ -134,7 +134,7 @@ namespace Unity.Services.Wire.Internal
                 wireAddr = "wss://wire-stg.unity3d.com/v2/ws";
             }
 
-#if UNITY_EDITOR && UNITY_SERVICES_CLOUDCODE_EXPERIMENTAL
+#if UNITY_EDITOR
             var cloudCodePid = EditorPrefs.GetInt(k_LocalCloudCodePidPrefs, -1);
             var cloudCodePort = EditorPrefs.GetInt("CLOUD_CODE_DEBUG_PORT", k_DefaultLocalCloudCodeServerPort);
             if (cloudCodePid != -1)

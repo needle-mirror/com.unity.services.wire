@@ -12,6 +12,8 @@ namespace Unity.Services.Wire.Internal
 
         public double RetrieveTokenTimeoutInSeconds = 5.0;
 
+        public double ConnectionTimeoutInSeconds = 120.0;
+
         // TODO: Determine if this is still used?
         public IWebSocket WebSocket = null;  // for unit tests
 

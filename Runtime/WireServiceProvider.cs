@@ -8,9 +8,6 @@ using Unity.Services.Core.Scheduler.Internal;
 using Unity.Services.Core.Threading.Internal;
 using Unity.Services.Core.Telemetry.Internal;
 using UnityEngine;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 namespace Unity.Services.Wire.Internal
 {
@@ -18,10 +15,6 @@ namespace Unity.Services.Wire.Internal
     {
         const string k_CloudEnvironmentKey = "com.unity.services.core.cloud-environment";
         const string k_StagingEnvironment = "staging";
-#if UNITY_EDITOR
-        const string k_LocalCloudCodePidPrefs = "LOCAL_CLOUD_CODE_PID";
-        const ushort k_DefaultLocalCloudCodeServerPort = 5000;
-#endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void InitializeOnLoad()
@@ -39,7 +32,8 @@ namespace Unity.Services.Wire.Internal
                 .DependsOn<IUnityThreadUtils>()
                 .DependsOn<IMetricsFactory>()
                 .DependsOn<IProjectConfiguration>()
-                .ProvidesComponent<IWire>();
+                .ProvidesComponent<IWire>()
+                .ProvidesComponent<IWireFactory>();
         }
 
         public Task Initialize(CoreRegistry registry)
@@ -100,6 +94,8 @@ namespace Unity.Services.Wire.Internal
             }
 
             registry.RegisterServiceComponent<IWire>(client);
+            registry.RegisterServiceComponent<IWireFactory>(
+                new WireFactory(accessTokenWire, playerId, actionScheduler, metrics, threadUtils));
         }
 
         internal Configuration GetConfiguration(IAccessToken token, IProjectConfiguration projectCfg)
@@ -134,15 +130,6 @@ namespace Unity.Services.Wire.Internal
                 wireAddr = "wss://wire-stg.unity3d.com/v2/ws";
             }
 
-#if UNITY_EDITOR
-            var cloudCodePid = EditorPrefs.GetInt(k_LocalCloudCodePidPrefs, -1);
-            var cloudCodePort = EditorPrefs.GetInt("CLOUD_CODE_DEBUG_PORT", k_DefaultLocalCloudCodeServerPort);
-            if (cloudCodePid != -1)
-            {
-                wireAddr = "ws://localhost:" + cloudCodePort + "/v2/ws";
-                Logger.Log("Wire will use the LOCAL debugger at " + wireAddr);
-            }
-#endif
             #endif
 
             return new Configuration

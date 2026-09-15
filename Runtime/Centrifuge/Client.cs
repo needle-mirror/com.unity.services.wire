@@ -757,11 +757,14 @@ namespace Unity.Services.Wire.Internal
 
             m_OnConnected += onConnected;
             m_OnConnectionAborted += onAborted;
+            var timeoutActionId = ScheduleConnectionTimeout(tcs);
+            // Declared out here so the finally block below can observe its faults.
+            Task connectTask = null;
             try
             {
                 try
                 {
-                    await ConnectAsync();
+                    connectTask = ConnectAsync();
                 }
                 catch (Exception e)
                 {
@@ -769,12 +772,72 @@ namespace Unity.Services.Wire.Internal
                     throw new ConnectionFailedException("Wire connection failed during ConnectAsync", e);
                 }
 
+                // The task returned by ConnectAsync only completes when the connection succeeds or
+                // fails terminally. A retryable failure leaves it pending forever while the
+                // reconnection loop keeps going, so it cannot be awaited on its own. We need a
+                // separate timeout task on the side to signal an abort if it takes too long.
+                await Task.WhenAny(connectTask, tcs.Task);
+
+                if (connectTask.IsFaulted)
+                {
+                    Exception exception = connectTask.Exception?.InnerException ?? connectTask.Exception;
+                    Logger.LogException(exception);
+                    throw new ConnectionFailedException("Wire connection failed during ConnectAsync", exception);
+                }
+
                 await tcs.Task;
             }
             finally
             {
+                CancelConnectionTimeout(timeoutActionId);
                 m_OnConnected -= onConnected;
                 m_OnConnectionAborted -= onAborted;
+
+                // Don't surface a timeout/abort that lands after we stopped awaiting.
+                ObserveFaults(tcs.Task);
+                ObserveFaults(connectTask);
+            }
+        }
+
+        static void ObserveFaults(Task task)
+        {
+            if (task == null)
+            {
+                return;
+            }
+
+            _ = task.ContinueWith(
+                t => _ = t.Exception,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        }
+
+        long ScheduleConnectionTimeout(TaskCompletionSource<bool> tcs)
+        {
+            var timeoutSeconds = m_Config.ConnectionTimeoutInSeconds;
+            if (timeoutSeconds <= 0)
+            {
+                return 0;
+            }
+
+            var e = new ConnectionFailedException($"Wire did not connect within {timeoutSeconds} seconds");
+            return m_ActionScheduler.ScheduleAction(() => tcs.TrySetException(e), timeoutSeconds);
+        }
+
+        void CancelConnectionTimeout(long actionId)
+        {
+            if (actionId <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                m_ActionScheduler.CancelAction(actionId);
+            }
+            catch
+            {
+                // In all likelihood this just means the action had already completed, and even if
+                // not then this is just the cancellation timeout. Not worth an error/exception.
             }
         }
 

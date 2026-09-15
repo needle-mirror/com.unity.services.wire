@@ -4,6 +4,21 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-09-15
+
+### Added
+
+- `IWireFactory`, a service component that opens an `IWire` connection to a chosen address.
+
+### Changed
+
+- Registered `IWire` now always connects to the cloud environment and does not support debugger.
+
+### Fixed
+
+- Fixed connections failing with "An error has occurred during a TLS handshake." on the Mono scripting backend when Managed Stripping Level is Medium or High.
+- Fixed a caller waiting on the Wire connection (through `SubscribeAsync`, for example) hanging forever when the connection kept failing for a retryable reason. The wait now gives up after 2 minutes and throws a `ConnectionFailedException`, while Wire carries on reconnecting in the background.
+
 ## [1.5.1] - 2026-09-04
 
 ### Changed

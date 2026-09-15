@@ -73,6 +73,11 @@ namespace Unity.Services.Wire.Internal
         public EmptyTokenException() {}
     }
 
+    public interface IWireFactory : Unity.Services.Core.Internal.IServiceComponent
+    {
+        public IWire Create(string address);
+    }
+
     public class WebSocketException : System.Exception
     {
         public WebSocketException() {}

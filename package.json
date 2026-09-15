@@ -1,7 +1,7 @@
 {
   "name": "com.unity.services.wire",
   "displayName": "Wire",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "unity": "6000.0",
   "description": "Wire provides notifications in real-time for Unity Gaming Services subscribing to a particular service and listening for messages from that subscription through a websocket connection.",
   "dependencies": {
@@ -21,18 +21,18 @@
       "Switch",
       "WebGL"
     ],
-    "changelog": "### Changed\n\n- Ungated package for use in Cloud Code 3.0.0 GA release"
+    "changelog": "### Added\n\n- `IWireFactory`, a service component that opens an `IWire` connection to a chosen address.\n\n### Changed\n\n- Registered `IWire` now always connects to the cloud environment and does not support debugger.\n\n### Fixed\n\n- Fixed connections failing with \"An error has occurred during a TLS handshake.\" on the Mono scripting backend when Managed Stripping Level is Medium or High.\n- Fixed a caller waiting on the Wire connection (through `SubscribeAsync`, for example) hanging forever when the connection kept failing for a retryable reason. The wait now gives up after 2 minutes and throws a `ConnectionFailedException`, while Wire carries on reconnecting in the background."
   },
   "relatedPackages": {
-    "com.unity.services.wire.tests": "1.5.1"
+    "com.unity.services.wire.tests": "1.6.0"
   },
   "upmCi": {
-    "footprint": "ec8568859dd32ede8adda4bd6def39ff04fd8543"
+    "footprint": "f97456b9dc9c715adb1bbbc88bc645fb3153b3d3"
   },
-  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.services.wire@1.5/manual/index.html",
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.services.wire@1.6/manual/index.html",
   "repository": {
     "url": "https://github.cds.internal.unity3d.com/unity/operate-services-sdk.git",
     "type": "git",
-    "revision": "17144d0f3790d89f832441d5fbbf61e750c193a7"
+    "revision": "00aae37af0635e66cb0726b9393c893aa1f48454"
   }
 }

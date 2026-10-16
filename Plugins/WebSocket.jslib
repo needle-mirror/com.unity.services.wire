@@ -169,15 +169,12 @@ var LibraryWebSocket = {
 				}
 
 			} else if (typeof ev.data == 'string') {
-				var arrBuffer = new ArrayBuffer(ev.data.length)
-				var dataBuffer = new Uint8Array(arrBuffer)
-				for (var i = 0, len = ev.data.length; i < len; i++) {
-				  dataBuffer[i] = ev.data.charCodeAt(i)
-				}
-				var buffer = _malloc(dataBuffer.length);
-				HEAPU8.set(dataBuffer, buffer);
+				// The managed side decodes the buffer as UTF-8, so the reported length must exclude the terminator.
+				var length = lengthBytesUTF8(ev.data) + 1;
+				var buffer = _malloc(length);
+				stringToUTF8(ev.data, buffer, length);
 				try {
-				    {{{ makeDynCall('viii') }}}(webSocketState.onMessage, instanceId, buffer, dataBuffer.length);
+				    {{{ makeDynCall('viii') }}}(webSocketState.onMessage, instanceId, buffer, length - 1);
 				} finally {
 				    _free(buffer);
 				}

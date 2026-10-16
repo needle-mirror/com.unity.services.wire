@@ -199,7 +199,7 @@ namespace UnityWebSocketSharp.Net
                     _waitHandle.Set();
 
                 if (_callback != null)
-                    _callback.BeginInvoke(this, ar => _callback.EndInvoke(ar), null);
+                    ThreadPool.QueueUserWorkItem(state => _callback(this));
             }
         }
 
@@ -216,7 +216,7 @@ namespace UnityWebSocketSharp.Net
                     _waitHandle.Set();
 
                 if (_callback != null)
-                    _callback.BeginInvoke(this, ar => _callback.EndInvoke(ar), null);
+                    ThreadPool.QueueUserWorkItem(state => _callback(this));
             }
         }
 

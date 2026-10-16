@@ -1387,10 +1387,8 @@ namespace UnityWebSocketSharp
 
         private void closeAsync(PayloadData payloadData, bool send, bool received)
         {
-            Action<PayloadData, bool, bool> closer = close;
-
-            closer.BeginInvoke(
-                payloadData, send, received, ar => closer.EndInvoke(ar), null
+            ThreadPool.QueueUserWorkItem(
+                state => close(payloadData, send, received)
             );
         }
 
@@ -1849,7 +1847,7 @@ namespace UnityWebSocketSharp
                 e = _messageEventQueue.Dequeue();
             }
 
-            _message.BeginInvoke(e, ar => _message.EndInvoke(ar), null);
+            ThreadPool.QueueUserWorkItem(state => _message(e));
         }
 
         private bool ping(byte[] data)
@@ -2284,16 +2282,12 @@ namespace UnityWebSocketSharp
             Opcode opcode, Stream sourceStream, Action<bool> completed
         )
         {
-            Func<Opcode, Stream, bool> sender = send;
-
-            sender.BeginInvoke(
-                opcode,
-                sourceStream,
-                ar =>
+            ThreadPool.QueueUserWorkItem(
+                state =>
                 {
                     try
                     {
-                        var sent = sender.EndInvoke(ar);
+                        var sent = send(opcode, sourceStream);
 
                         if (completed != null)
                             completed(sent);
@@ -2308,8 +2302,7 @@ namespace UnityWebSocketSharp
                             ex
                         );
                     }
-                },
-                null
+                }
             );
         }
 
@@ -2657,19 +2650,16 @@ namespace UnityWebSocketSharp
         // As server
         internal void AcceptAsync()
         {
-            Func<bool> acceptor = accept;
-
-            acceptor.BeginInvoke(
-                ar =>
+            ThreadPool.QueueUserWorkItem(
+                state =>
                 {
-                    var accepted = acceptor.EndInvoke(ar);
+                    var accepted = accept();
 
                     if (!accepted)
                         return;
 
                     open();
-                },
-                null
+                }
             );
         }
 
@@ -3556,19 +3546,16 @@ namespace UnityWebSocketSharp
                 throw new InvalidOperationException(msg);
             }
 
-            Func<bool> connector = connect;
-
-            connector.BeginInvoke(
-                ar =>
+            ThreadPool.QueueUserWorkItem(
+                state =>
                 {
-                    var connected = connector.EndInvoke(ar);
+                    var connected = connect();
 
                     if (!connected)
                         return;
 
                     open();
-                },
-                null
+                }
             );
         }
 

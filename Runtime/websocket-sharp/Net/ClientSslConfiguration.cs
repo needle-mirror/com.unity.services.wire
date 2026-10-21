@@ -249,18 +249,11 @@ namespace UnityWebSocketSharp.Net
         ///   The delegate invokes the method called when a client validates
         ///   the certificate.
         ///   </para>
-        ///   <para>
-        ///   The default value is a delegate that invokes a method that only
-        ///   returns <c>true</c>.
-        ///   </para>
         /// </value>
         public RemoteCertificateValidationCallback ServerCertificateValidationCallback
         {
             get
             {
-                if (_serverCertValidationCallback == null)
-                    _serverCertValidationCallback = defaultValidateServerCertificate;
-
                 return _serverCertValidationCallback;
             }
 
@@ -315,16 +308,6 @@ namespace UnityWebSocketSharp.Net
         )
         {
             return null;
-        }
-
-        private static bool defaultValidateServerCertificate(
-            object sender,
-            X509Certificate certificate,
-            X509Chain chain,
-            SslPolicyErrors sslPolicyErrors
-        )
-        {
-            return true;
         }
 
         #endregion

@@ -17,6 +17,11 @@ namespace Unity.Services.Wire.Internal
 {
     class Client : IWire
     {
+        // Unsubscribe push codes from 2500 ask the client to resubscribe, e.g. 2501 when a subscription token expired.
+        const uint k_MinResubscribeUnsubscribeCode = 2500;
+        const int k_MaxResubscribeAttempts = 10;
+        const double k_MaxResubscribeDelaySeconds = 30;
+
         internal enum ConnectionState
         {
             Disconnected,
@@ -54,7 +59,8 @@ namespace Unity.Services.Wire.Internal
         IActionScheduler m_ActionScheduler;
         long m_PingDeadlineScheduledId = 0;
         long m_ReconnectionActionId = 0;
-        bool m_RetryWithSubs = true;
+        readonly RefreshTimer m_ConnectionRefreshTimer;
+        string m_ConnectAccessToken;
 
         public Client(Configuration config, Core.Scheduler.Internal.IActionScheduler actionScheduler, IMetrics metrics,
                       IUnityThreadUtils threadUtils, IWebsocketFactory websocketFactory)
@@ -73,6 +79,7 @@ namespace Unity.Services.Wire.Internal
             };
             m_Backoff = new ExponentialBackoffStrategy();
             m_CommandManager = new CommandManager(config, actionScheduler);
+            m_ConnectionRefreshTimer = new RefreshTimer(actionScheduler, m_Config);
 
 #if UNITY_EDITOR
             EditorApplication.playModeStateChanged += PlayModeStateChanged;
@@ -182,10 +189,10 @@ namespace Unity.Services.Wire.Internal
 
         internal Task DisconnectAsync()
         {
-            if (m_ReconnectionActionId > 0)
-            {
-                m_ActionScheduler.CancelAction(m_ReconnectionActionId);
-            }
+            CancelScheduledReconnect();
+            StopWaitingForNewAccessToken();
+
+            CancelRefreshes();
 
             if (m_DisconnectionCompletionSource != null)
             {
@@ -196,6 +203,13 @@ namespace Unity.Services.Wire.Internal
             if (m_WebsocketClient == null)
             {
                 ChangeConnectionState(ConnectionState.Disconnected);
+                return Task.CompletedTask;
+            }
+
+            // The server already closed the socket, and closing it again throws.
+            if (m_ConnectionState == ConnectionState.Disconnected)
+            {
+                m_WebsocketClient = null;
                 return Task.CompletedTask;
             }
 
@@ -219,11 +233,8 @@ namespace Unity.Services.Wire.Internal
 
         public Task ConnectAsync()
         {
-            if (m_ReconnectionActionId > 0) // Accounting for unit tests
-            {
-                m_ActionScheduler.CancelAction(m_ReconnectionActionId);
-                m_ReconnectionActionId = 0;
-            }
+            CancelScheduledReconnect();
+            StopWaitingForNewAccessToken();
 
             if (m_ConnectionState == ConnectionState.Connected)
             {
@@ -277,24 +288,10 @@ namespace Unity.Services.Wire.Internal
                 {
                     throw new EmptyTokenException();
                 }
-                var requests = new Dictionary<string, SubscribeRequest>();
-                if (m_RetryWithSubs)
-                {
-                    foreach (var(key, subscription) in subscriptions)
-                    {
-                        if (subscription == null)
-                        {
-                            continue;
-                        }
 
-                        var request = await subscription.GetReconnectSubscribeRequest(SubscriptionRepository);
-                        if (request != null) // kill subs that we cant get a token for?
-                            requests.TryAdd(key, request);
-                    }
-                }
-
-                var connectionRequest = new ConnectRequest(m_Config.token.AccessToken, requests);
-                var command = new Command(connectionRequest);
+                // Subscriptions are restored with subscribe commands after the handshake so their tokens can be refreshed.
+                m_ConnectAccessToken = m_Config.token.AccessToken;
+                var command = new Command(new ConnectRequest(m_ConnectAccessToken));
                 try
                 {
                     var reply = await SendCommandAsync(command.id, command);
@@ -306,7 +303,6 @@ namespace Unity.Services.Wire.Internal
                         throw new ConnectionFailedException("Wire connection aborted before the handshake completed.");
                     }
                     m_Backoff.Reset();
-                    SubscriptionRepository.RecoverSubscriptions(reply);
                     if (reply.connect == null)
                     {
                         // A connect reply with no connect result means the handshake did not
@@ -319,7 +315,7 @@ namespace Unity.Services.Wire.Internal
                     m_Pong = reply.connect.pong;
                     m_ServerPingIntervalS = reply.connect.ping;
                     SetupPingDeadline();
-                    m_RetryWithSubs = true;
+                    m_ConnectionRefreshTimer.Schedule(reply.connect.expires, reply.connect.ttl, RefreshConnection);
                 }
                 catch (CommandInterruptedException exception)
                 {
@@ -329,7 +325,6 @@ namespace Unity.Services.Wire.Internal
                     m_ConnectionCompletionSource.TrySetException(
                         new ConnectionFailedException(
                             $"Socket closed during connection attempt: {exception.m_Code}"));
-                    m_RetryWithSubs = false; //if it fails, try again without subs
                     if (m_WebsocketClient?.GetState() == WebSocketState.Open)
                         m_WebsocketClient?.Close();
                 }
@@ -339,7 +334,6 @@ namespace Unity.Services.Wire.Internal
                     Logger.Log($"Unexpected exception '{exception.Message}' during connection");
                     Logger.LogException(exception);
                     m_ConnectionCompletionSource.TrySetException(exception);
-                    m_RetryWithSubs = false; //if it fails, try again without subs
                     m_WebsocketClient?.Close();
                 }
             }
@@ -362,23 +356,135 @@ namespace Unity.Services.Wire.Internal
             Logger.Log("Attempting to restore subscriptions");
             _ = m_ThreadUtils.PostAsync(async() =>
             {
-                foreach (var(key, subscription) in subscriptions)
+                foreach (var(_, subscription) in subscriptions)
                 {
-                    Logger.Log($"\tSub {key} is {subscription.SubscriptionState}");
-                    if (subscription.SubscriptionState == SubscriptionState.Synced)
-                        continue;
-                    try
-                    {
-                        Logger.Log($"\tResubscribing Sub {key}");
-                        await subscription.SubscribeAsync();
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogWarning($"Failed to restore sub: {e}");
-                        // remove sub?
-                    }
+                    subscription.m_ResubscribeAttempts = 0;
+                    await RestoreSubscriptionAsync(subscription);
                 }
             });
+        }
+
+        async Task RestoreSubscriptionAsync(Subscription subscription)
+        {
+            // Skips subscriptions the caller unsubscribed from while the restore was pending.
+            if (m_ConnectionState != ConnectionState.Connected || subscription.SubscriptionState == SubscriptionState.Synced
+                || SubscriptionRepository.GetSub(subscription) != subscription)
+            {
+                return;
+            }
+
+            try
+            {
+                Logger.Log($"\tResubscribing Sub {subscription.Channel}");
+                await subscription.SubscribeAsync();
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning($"Failed to restore sub: {e}");
+                ScheduleResubscribeRetry(subscription);
+            }
+        }
+
+        void ScheduleResubscribeRetry(Subscription subscription)
+        {
+            if (subscription.m_ResubscribeAttempts >= k_MaxResubscribeAttempts)
+            {
+                return;
+            }
+
+            var delay = Math.Min(k_MaxResubscribeDelaySeconds, Math.Pow(2, subscription.m_ResubscribeAttempts));
+            subscription.m_ResubscribeAttempts++;
+            GetRefreshTimer(subscription).ScheduleIn(delay, () => _ = RestoreSubscriptionAsync(subscription));
+        }
+
+        void RefreshConnection() => _ = RefreshConnectionAsync();
+
+        async Task RefreshConnectionAsync()
+        {
+            if (m_ConnectionState != ConnectionState.Connected)
+            {
+                return;
+            }
+
+            var token = m_Config.token.AccessToken;
+            if (string.IsNullOrEmpty(token))
+            {
+                Logger.LogWarning("No access token available to refresh the Wire connection.");
+                return;
+            }
+
+            try
+            {
+                var command = new Command(new RefreshRequest(token));
+                var reply = await SendCommandAsync(command.id, command);
+                if (reply?.refresh != null)
+                {
+                    m_ConnectionRefreshTimer.Schedule(reply.refresh.expires, reply.refresh.ttl, RefreshConnection);
+                }
+            }
+            catch (Exception e)
+            {
+                // The server closes the connection once the current token expires and the regular reconnection takes over.
+                Logger.LogWarning($"Wire connection token refresh failed: {e.Message}");
+            }
+        }
+
+        void ScheduleSubscriptionRefresh(Subscription subscription, bool expires, uint ttl)
+        {
+            GetRefreshTimer(subscription).Schedule(expires, ttl, () => _ = RefreshSubscriptionAsync(subscription));
+        }
+
+        RefreshTimer GetRefreshTimer(Subscription subscription)
+        {
+            if (subscription.m_RefreshTimer == null)
+            {
+                subscription.m_RefreshTimer = new RefreshTimer(m_ActionScheduler, m_Config);
+            }
+
+            return subscription.m_RefreshTimer;
+        }
+
+        async Task RefreshSubscriptionAsync(Subscription subscription)
+        {
+            if (!CanRefresh(subscription))
+            {
+                return;
+            }
+
+            try
+            {
+                var token = await subscription.RetrieveTokenAsync();
+                if (!CanRefresh(subscription))
+                {
+                    return;
+                }
+
+                var command = new Command(new SubRefreshRequest(subscription.Channel, token));
+                var reply = await SendCommandAsync(command.id, command);
+                if (reply?.subRefresh != null)
+                {
+                    ScheduleSubscriptionRefresh(subscription, reply.subRefresh.expires, reply.subRefresh.ttl);
+                }
+            }
+            catch (Exception e)
+            {
+                // The server unsubscribes the channel once its current token expires.
+                Logger.LogWarning($"Wire subscription token refresh failed for {subscription.Channel}: {e.Message}");
+            }
+        }
+
+        // Re-checked after fetching the token, since the socket can close or the channel be dropped meanwhile.
+        bool CanRefresh(Subscription subscription) =>
+            m_ConnectionState == ConnectionState.Connected && subscription.IsConnected
+            && SubscriptionRepository.GetSub(subscription) == subscription;
+
+        void CancelRefreshes()
+        {
+            m_ConnectionRefreshTimer.Cancel();
+            foreach (var subscription in SubscriptionRepository.GetAll())
+            {
+                subscription.Value.m_RefreshTimer?.Cancel();
+            }
         }
 
         void SetupPingDeadline()
@@ -497,6 +603,7 @@ namespace Unity.Services.Wire.Internal
             try
             {
                 CancelPingDeadline();
+                CancelRefreshes();
                 var code = (CentrifugeCloseCode)originalCode;
                 Logger.Log("Websocket closed with code: " + code);
                 ChangeConnectionState(ConnectionState.Disconnected);
@@ -508,7 +615,23 @@ namespace Unity.Services.Wire.Internal
                     m_DisconnectionCompletionSource = null;
                 }
 
-                if (m_WantConnected && ShouldReconnect(code))
+                if (m_WantConnected && code == CentrifugeCloseCode.InvalidToken && m_Config.tokenObserver != null)
+                {
+                    if (AccessTokenChangedSinceConnect())
+                    {
+                        // Authentication already replaced the rejected token, so the backoff would only add delay.
+                        Logger.Log("Wire token was rejected but has since been refreshed, reconnecting.");
+                        m_ReconnectionActionId = m_ActionScheduler.ScheduleAction(() => _ = ConnectAsync());
+                    }
+                    else
+                    {
+                        // Retrying with the rejected token can't succeed; reconnect once Authentication issues a new one.
+                        Logger.Log("Wire token was rejected, reconnecting once the access token changes.");
+                        WaitForNewAccessToken();
+                        m_OnConnectionAborted?.Invoke(new ConnectionFailedException($"The server rejected the access token ({code})"));
+                    }
+                }
+                else if (m_WantConnected && ShouldReconnect(code))
                 {
                     if (m_Config.NetworkUtil.IsInternetReachable() == false)
                     {
@@ -520,19 +643,86 @@ namespace Unity.Services.Wire.Internal
 
                     // TokenVerificationFailed is a special Wire custom error that happens when the token verification failed on server side to prevent any rate limitation on UAS;
                     // the server will wait a specified amount of time before retrying therefore it's useless to try again too early from the client.
-                    var secondsUntilNextAttempt = (int)originalCode == 4333 ? 10.0f : m_Backoff.GetNext(); // TODO: get rid of the cast when the close code gets public
+                    var secondsUntilNextAttempt = code == CentrifugeCloseCode.TokenVerificationFailed ? 10.0f : m_Backoff.GetNext();
                     Logger.Log($"Retrying websocket connection in {secondsUntilNextAttempt} seconds.");
-                    m_ActionScheduler.ScheduleAction(() => _ = ConnectAsync(), secondsUntilNextAttempt);
+                    m_ReconnectionActionId = m_ActionScheduler.ScheduleAction(() => _ = ConnectAsync(), secondsUntilNextAttempt);
                 }
                 else if (m_WantConnected || m_Disabled)
                 {
-                    m_OnConnectionAborted?.Invoke(new ConnectionFailedException($"Wire received terminal close code: {code}"));
+                    var reason = $"Wire received terminal close code: {code}";
+                    if (m_WantConnected)
+                    {
+                        // Unsynced would suggest the connection comes back; the server said it won't.
+                        foreach (var subscription in SubscriptionRepository.GetAll())
+                        {
+                            subscription.Value.OnError(reason);
+                        }
+                    }
+
+                    m_OnConnectionAborted?.Invoke(new ConnectionFailedException(reason));
                 }
             }
             catch (Exception e)
             {
                 Logger.LogException(e);
             }
+        }
+
+        // A refresh can land after the rejected connect but before its close is handled, so check before waiting.
+        bool AccessTokenChangedSinceConnect()
+        {
+            var accessToken = m_Config.token.AccessToken;
+            return !string.IsNullOrEmpty(accessToken) && accessToken != m_ConnectAccessToken;
+        }
+
+        void WaitForNewAccessToken()
+        {
+            m_Config.tokenObserver.AccessTokenChanged -= OnAccessTokenChanged;
+            m_Config.tokenObserver.AccessTokenChanged += OnAccessTokenChanged;
+        }
+
+        // Without this, a retry scheduled by an earlier close could override a later final close or token wait.
+        void CancelScheduledReconnect()
+        {
+            if (m_ReconnectionActionId > 0)
+            {
+                m_ActionScheduler.CancelAction(m_ReconnectionActionId);
+                m_ReconnectionActionId = 0;
+            }
+        }
+
+        void StopWaitingForNewAccessToken()
+        {
+            if (m_Config.tokenObserver != null)
+            {
+                m_Config.tokenObserver.AccessTokenChanged -= OnAccessTokenChanged;
+            }
+        }
+
+        void OnAccessTokenChanged(string accessToken)
+        {
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return;
+            }
+
+            m_ThreadUtils.Send(() =>
+            {
+                StopWaitingForNewAccessToken();
+                if (!m_WantConnected || m_Disabled)
+                {
+                    return;
+                }
+
+                try
+                {
+                    _ = ConnectAsync();
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
+                }
+            });
         }
 
         internal long CheckNetworkState(TimeSpan duration)
@@ -591,42 +781,20 @@ namespace Unity.Services.Wire.Internal
             m_WebsocketClient.OnClose += WebsocketCloseListener;
         }
 
+        // Stale and InvalidToken are final on protocol v2 but retried: an app paused mid-handshake can hit Stale,
+        // and InvalidToken only gets here without a token observer, which leaves retrying as the only way back.
         private bool ShouldReconnect(CentrifugeCloseCode code)
         {
             switch (code)
             {
-                // irrecoverable error codes
                 case CentrifugeCloseCode.WebsocketUnsupportedData:
                 case CentrifugeCloseCode.WebsocketMandatoryExtension:
-                case CentrifugeCloseCode.InvalidToken:
-                case CentrifugeCloseCode.ForceNoReconnect:
-                    return false;
-                case CentrifugeCloseCode.WebsocketNotSet:
-                case CentrifugeCloseCode.WebsocketNormal:
-                case CentrifugeCloseCode.WebsocketAway:
-                case CentrifugeCloseCode.WebsocketProtocolError:
-                case CentrifugeCloseCode.WebsocketUndefined:
-                case CentrifugeCloseCode.WebsocketNoStatus:
-                case CentrifugeCloseCode.WebsocketAbnormal:
-                case CentrifugeCloseCode.WebsocketInvalidData:
-                case CentrifugeCloseCode.WebsocketPolicyViolation:
-                case CentrifugeCloseCode.WebsocketTooBig:
-                case CentrifugeCloseCode.WebsocketServerError:
-                case CentrifugeCloseCode.WebsocketTlsHandshakeFailure:
-                case CentrifugeCloseCode.Normal:
-                case CentrifugeCloseCode.Shutdown:
                 case CentrifugeCloseCode.BadRequest:
-                case CentrifugeCloseCode.InternalServerError:
-                case CentrifugeCloseCode.Expired:
-                case CentrifugeCloseCode.SubscriptionExpired:
-                case CentrifugeCloseCode.Stale:
-                case CentrifugeCloseCode.Slow:
-                case CentrifugeCloseCode.WriteError:
-                case CentrifugeCloseCode.InsufficientState:
-                case CentrifugeCloseCode.ForceReconnect:
+                case CentrifugeCloseCode.ForceNoReconnect:
                 case CentrifugeCloseCode.ConnectionLimit:
                 case CentrifugeCloseCode.ChannelLimit:
-                // case CentrifugeCloseCode.TokenVerificationFailed:
+                case CentrifugeCloseCode.InappropriateProtocol:
+                    return false;
                 default:
                     return true;
             }
@@ -673,15 +841,25 @@ namespace Unity.Services.Wire.Internal
             if (push.IsUnsub())
             {
                 var subscription = SubscriptionRepository.GetSub(push.channel);
-                if (subscription != null)
+                if (subscription == null)
                 {
-                    subscription.OnKickReceived();
-                    SubscriptionRepository.RemoveSub(subscription);
+                    // we temporarily disable logging the subscription not found error
+                    // here because we saw the server can send those sometimes. We might
+                    // replug it later if we fix the issue on the server
+                    return;
                 }
 
-                // we temporarily disable logging the subscription not found error
-                // here because we saw the server can send those sometimes. We might
-                // replug it later if we fix the issue on the server
+                if (push.unsubscribe.code >= k_MinResubscribeUnsubscribeCode)
+                {
+                    Logger.Log($"Resubscribing to {push.channel} after unsubscribe push: {push.unsubscribe.reason}");
+                    subscription.m_RefreshTimer?.Cancel();
+                    subscription.OnConnectivityChangeReceived(false);
+                    Resubscribe(new[] { new KeyValuePair<string, Subscription>(push.channel, subscription) });
+                    return;
+                }
+
+                subscription.OnKickReceived();
+                SubscriptionRepository.RemoveSub(subscription);
                 return;
             }
 
@@ -728,14 +906,22 @@ namespace Unity.Services.Wire.Internal
                     throw new AlreadySubscribedException(subscription.Channel);
                 }
 
-                var token = await subscription.RetrieveTokenAsync();
                 var recover = SubscriptionRepository.IsRecovering(subscription);
+                var token = await subscription.RetrieveTokenAsync();
+
+                // A restore the caller unsubscribed from while the token was being fetched must not subscribe again.
+                if (recover && !SubscriptionRepository.IsRecovering(subscription))
+                {
+                    return;
+                }
+
                 var request = new SubscribeRequest { channel = subscription.Channel, token = token, recover = recover, offset = subscription.Offset };
                 var command = new Command(request);
                 var reply = await SendCommandAsync(command.id, command);
 
                 subscription.Epoch = reply.subscribe.epoch;
                 SubscriptionRepository.OnSubscriptionComplete(subscription, reply.subscribe);
+                ScheduleSubscriptionRefresh(subscription, reply.subscribe.expires, reply.subscribe.ttl);
             }
             catch (Exception exception)
             {
@@ -846,6 +1032,7 @@ namespace Unity.Services.Wire.Internal
             var subscription = new Subscription(tokenProvider);
             subscription.UnsubscribeReceived += async completionSource =>
             {
+                subscription.m_RefreshTimer?.Cancel();
                 try
                 {
                     if (SubscriptionRepository.IsAlreadySubscribed(subscription))
@@ -878,10 +1065,12 @@ namespace Unity.Services.Wire.Internal
             };
             subscription.KickReceived += () =>
             {
+                subscription.m_RefreshTimer?.Cancel();
                 SubscriptionRepository.RemoveSub(subscription);
             };
             subscription.DisposeReceived += () =>
             {
+                subscription.m_RefreshTimer?.Cancel();
                 SubscriptionRepository.RemoveSub(subscription);
             };
             return subscription;

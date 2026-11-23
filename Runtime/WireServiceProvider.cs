@@ -15,6 +15,7 @@ namespace Unity.Services.Wire.Internal
     {
         const string k_CloudEnvironmentKey = "com.unity.services.core.cloud-environment";
         const string k_StagingEnvironment = "staging";
+        const string k_RefreshTtlOverrideKey = "com.unity.services.wire.refresh-ttl-override";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void InitializeOnLoad()
@@ -32,6 +33,7 @@ namespace Unity.Services.Wire.Internal
                 .DependsOn<IUnityThreadUtils>()
                 .DependsOn<IMetricsFactory>()
                 .DependsOn<IProjectConfiguration>()
+                .OptionallyDependsOn<IAccessTokenObserver>()
                 .ProvidesComponent<IWire>()
                 .ProvidesComponent<IWireFactory>();
         }
@@ -84,7 +86,10 @@ namespace Unity.Services.Wire.Internal
                 throw new MissingComponentException("IProjectConfiguration component not initialized.");
             }
 
-            var client = new Client(GetConfiguration(accessTokenWire, projectCfg), actionScheduler, metrics, threadUtils, new WebSocketFactory());
+            registry.TryGetServiceComponent<IAccessTokenObserver>(out var tokenObserver);
+            var config = GetConfiguration(accessTokenWire, projectCfg);
+            config.tokenObserver = tokenObserver;
+            var client = new Client(config, actionScheduler, metrics, threadUtils, new WebSocketFactory());
 
             playerId.PlayerIdChanged += client.OnIdentityChanged;
 
@@ -95,7 +100,7 @@ namespace Unity.Services.Wire.Internal
 
             registry.RegisterServiceComponent<IWire>(client);
             registry.RegisterServiceComponent<IWireFactory>(
-                new WireFactory(accessTokenWire, playerId, actionScheduler, metrics, threadUtils));
+                new WireFactory(accessTokenWire, tokenObserver, playerId, actionScheduler, metrics, threadUtils));
         }
 
         internal Configuration GetConfiguration(IAccessToken token, IProjectConfiguration projectCfg)
@@ -136,7 +141,25 @@ namespace Unity.Services.Wire.Internal
             {
                 token = token,
                 address = wireAddr,
+                RefreshTtlOverrideSeconds = GetRefreshTtlOverride(projectCfg),
             };
+        }
+
+        static uint? GetRefreshTtlOverride(IProjectConfiguration projectCfg)
+        {
+            if (!Debug.isDebugBuild)
+            {
+                return null;
+            }
+
+            var ttl = projectCfg?.GetInt(k_RefreshTtlOverrideKey) ?? 0;
+            if (ttl > 0)
+            {
+                Logger.LogWarning($"Wire token refreshes use a {ttl}s TTL from {k_RefreshTtlOverrideKey}.");
+                return (uint)ttl;
+            }
+
+            return null;
         }
     }
 }

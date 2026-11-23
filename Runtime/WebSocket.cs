@@ -125,20 +125,14 @@ namespace Unity.Services.Wire.Internal
     static class WebSocketHelpers
     {
         /// <summary>
-        /// Safely parse close code enum from int value.
+        /// Parse close code enum from int value, keeping codes the enum does not name, such as the server's
+        /// Centrifuge close codes.
         /// </summary>
         /// <returns>The close code enum.</returns>
         /// <param name="closeCode">Close code as int.</param>
         public static WebSocketCloseCode ParseCloseCodeEnum(int closeCode)
         {
-            if (WebSocketCloseCode.IsDefined(typeof(WebSocketCloseCode), closeCode))
-            {
-                return (WebSocketCloseCode)closeCode;
-            }
-            else
-            {
-                return WebSocketCloseCode.Undefined;
-            }
+            return (WebSocketCloseCode)closeCode;
         }
 
         /// <summary>

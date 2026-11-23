@@ -87,10 +87,10 @@ namespace Unity.Services.Wire.Internal
         /// </summary>
         WebsocketTlsHandshakeFailure = 1015,
 
-        // Centrifuge specific close codes
+        // Centrifuge close codes sent on protocol v2: 3000-3499 ask the client to reconnect, 3500-3999 not to.
 
         /// <summary>
-        /// is clean disconnect when client cleanly closed connection.
+        /// sent when the connection is closed.
         /// </summary>
         Normal = 3000,
 
@@ -100,17 +100,7 @@ namespace Unity.Services.Wire.Internal
         Shutdown = 3001,
 
         /// <summary>
-        /// sent when client came with invalid token.
-        /// </summary>
-        InvalidToken = 3002,
-
-        /// <summary>
-        /// sent when client uses malformed protocol frames or wrong order of commands.
-        /// </summary>
-        BadRequest = 3003,
-
-        /// <summary>
-        ///sent when internal error occurred on server.
+        /// sent when internal error occurred on server.
         /// </summary>
         InternalServerError = 3004,
 
@@ -123,11 +113,6 @@ namespace Unity.Services.Wire.Internal
         /// sent when client subscription expired.
         /// </summary>
         SubscriptionExpired = 3006,
-
-        /// <summary>
-        /// sent to close connection that did not become authenticated in configured interval after dialing.
-        /// </summary>
-        Stale = 3007,
 
         /// <summary>
         /// sent when client can't read messages fast enough.
@@ -151,24 +136,48 @@ namespace Unity.Services.Wire.Internal
         ForceReconnect = 3011,
 
         /// <summary>
+        /// sent when the client did not answer a server ping in time.
+        /// </summary>
+        NoPong = 3012,
+
+        /// <summary>
+        /// sent when client came with invalid token.
+        /// </summary>
+        InvalidToken = 3500,
+
+        /// <summary>
+        /// sent when client uses malformed protocol frames or wrong order of commands.
+        /// </summary>
+        BadRequest = 3501,
+
+        /// <summary>
+        /// sent to close connection that did not become authenticated in configured interval after dialing.
+        /// </summary>
+        Stale = 3502,
+
+        /// <summary>
         /// sent when server disconnects connection and asks it to not reconnect again.
         /// </summary>
-        ForceNoReconnect = 3012,
+        ForceNoReconnect = 3503,
 
         /// <summary>
         /// can be sent when client connection exceeds configured connection limit (per user ID or due to other rule).
         /// </summary>
-        ConnectionLimit = 3013,
+        ConnectionLimit = 3504,
 
         /// <summary>
         /// can be sent when client connection exceeds configured channel limit.
         /// </summary>
-        ChannelLimit = 3014,
+        ChannelLimit = 3505,
 
-        // <summary>
-        // Wire custom close code.
-        // The server could not approve the token, retry in 10s.
-        // </summary>
-        // TokenVerificationFailed = 4333
+        /// <summary>
+        /// sent when the client uses a protocol version the server does not accept.
+        /// </summary>
+        InappropriateProtocol = 3506,
+
+        /// <summary>
+        /// Wire custom close code: the server could not approve the token yet and asks the client to retry in 10 seconds.
+        /// </summary>
+        TokenVerificationFailed = 4333,
     }
 }

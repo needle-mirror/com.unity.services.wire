@@ -15,6 +15,10 @@ namespace Unity.Services.Wire.Protocol.Internal
         public ConnectResult connect;
         public SubscribeResult subscribe;
         public UnsubscribeResult unsubscribe;
+        public RefreshResult refresh;
+
+        [JsonProperty("sub_refresh")]
+        public SubRefreshResult subRefresh;
         // missing fields that are not implemented/required by Wire
         public Push push;
         public PingResult ping;
@@ -60,6 +64,22 @@ namespace Unity.Services.Wire.Protocol.Internal
             var reply = new Reply();
             reply.id = id;
             reply.unsubscribe = new UnsubscribeResult();
+            return reply;
+        }
+
+        internal static Reply RefreshReply(UInt32 id, RefreshResult result)
+        {
+            var reply = new Reply();
+            reply.id = id;
+            reply.refresh = result;
+            return reply;
+        }
+
+        internal static Reply SubRefreshReply(UInt32 id, SubRefreshResult result)
+        {
+            var reply = new Reply();
+            reply.id = id;
+            reply.subRefresh = result;
             return reply;
         }
 

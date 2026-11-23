@@ -13,6 +13,8 @@ namespace Unity.Services.Wire.Protocol.Internal
         internal const string k_SUBSCRIBE = "SUBSCRIBE";
         internal const string k_UNSUBSCRIBE = "UNSUBSCRIBE";
         internal const string k_PING = "PING";
+        internal const string k_REFRESH = "REFRESH";
+        internal const string k_SUB_REFRESH = "SUB_REFRESH";
         internal const string k_UNKNOWN = "UNKNOWN";
 
         public UInt32 id;
@@ -20,6 +22,10 @@ namespace Unity.Services.Wire.Protocol.Internal
         public SubscribeRequest subscribe;
 
         public UnsubscribeRequest unsubscribe;
+        public RefreshRequest refresh;
+
+        [JsonProperty("sub_refresh")]
+        public SubRefreshRequest subRefresh;
 
         // missing requests here (not implemented/necessary for Wire)
         public PingRequest ping;
@@ -49,6 +55,18 @@ namespace Unity.Services.Wire.Protocol.Internal
         {
             id = CommandID.GenerateNewId();
             unsubscribe = request;
+        }
+
+        public Command(RefreshRequest request)
+        {
+            id = CommandID.GenerateNewId();
+            refresh = request;
+        }
+
+        public Command(SubRefreshRequest request)
+        {
+            id = CommandID.GenerateNewId();
+            subRefresh = request;
         }
 
         public static Command FromJSON(byte[] data)
@@ -92,6 +110,16 @@ namespace Unity.Services.Wire.Protocol.Internal
             if (unsubscribe != null)
             {
                 return k_UNSUBSCRIBE;
+            }
+
+            if (refresh != null)
+            {
+                return k_REFRESH;
+            }
+
+            if (subRefresh != null)
+            {
+                return k_SUB_REFRESH;
             }
 
             return IsPing() ? k_PING : k_UNKNOWN;

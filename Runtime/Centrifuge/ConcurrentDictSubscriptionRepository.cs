@@ -19,7 +19,6 @@ namespace Unity.Services.Wire.Internal
         void RemoveSub(Subscription sub);
 
         void OnSocketClosed();
-        void RecoverSubscriptions(Reply reply);
         bool IsEmpty { get; }
 
         void Clear();
@@ -130,26 +129,6 @@ namespace Unity.Services.Wire.Internal
             foreach (var iterator in Subscriptions)
             {
                 iterator.Value.OnConnectivityChangeReceived(false);
-            }
-        }
-
-        // recovering subscriptions after a reconnect
-        // (subscriptions that are made through the connection command)
-        public void RecoverSubscriptions(Reply reply)
-        {
-            var res = reply?.connect;
-            if (res?.subs?.Count > 0)
-            {
-                foreach (var subIterator in res.subs)
-                {
-                    var sub = GetSub(subIterator.Key);
-                    if (sub == null)
-                    {
-                        Logger.LogWarning($"Receiving a subscription result from an untracked subscription: ${subIterator.Key}");
-                        continue;
-                    }
-                    OnSubscriptionComplete(sub, subIterator.Value);
-                }
             }
         }
 

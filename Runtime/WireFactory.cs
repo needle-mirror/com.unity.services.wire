@@ -8,15 +8,17 @@ namespace Unity.Services.Wire.Internal
     class WireFactory : IWireFactory
     {
         readonly IAccessToken m_AccessToken;
+        readonly IAccessTokenObserver m_TokenObserver;
         readonly IPlayerId m_PlayerId;
         readonly IActionScheduler m_ActionScheduler;
         readonly IMetrics m_Metrics;
         readonly IUnityThreadUtils m_ThreadUtils;
 
-        public WireFactory(IAccessToken accessToken, IPlayerId playerId, IActionScheduler actionScheduler,
-                           IMetrics metrics, IUnityThreadUtils threadUtils)
+        public WireFactory(IAccessToken accessToken, IAccessTokenObserver tokenObserver, IPlayerId playerId,
+                           IActionScheduler actionScheduler, IMetrics metrics, IUnityThreadUtils threadUtils)
         {
             m_AccessToken = accessToken;
+            m_TokenObserver = tokenObserver;
             m_PlayerId = playerId;
             m_ActionScheduler = actionScheduler;
             m_Metrics = metrics;
@@ -29,6 +31,7 @@ namespace Unity.Services.Wire.Internal
                 new Configuration
                 {
                     token = m_AccessToken,
+                    tokenObserver = m_TokenObserver,
                     address = address,
                 },
                 m_ActionScheduler, m_Metrics, m_ThreadUtils, new WebSocketFactory());

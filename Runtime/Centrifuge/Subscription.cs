@@ -29,6 +29,9 @@ namespace Unity.Services.Wire.Internal
         public UInt64 Offset;
         public string Epoch;
 
+        internal RefreshTimer m_RefreshTimer;
+        internal int m_ResubscribeAttempts;
+
         SubscriptionState m_State = SubscriptionState.Unsynced;
         public SubscriptionState SubscriptionState { get => m_State; private set => SetState(value); }
 
@@ -195,28 +198,6 @@ namespace Unity.Services.Wire.Internal
             var completionSource = new TaskCompletionSource<bool>();
             UnsubscribeReceived?.Invoke(completionSource);
             return completionSource.Task;
-        }
-
-        public async Task<SubscribeRequest> GetReconnectSubscribeRequest(ISubscriptionRepository repository)
-        {
-            string subscriptionToken;
-            try
-            {
-                subscriptionToken = await RetrieveTokenAsync();
-            }
-            catch (Exception e)
-            {
-                OnError($"Failed to retrieve token: {e.Message}");
-                return null;
-            }
-
-            return new SubscribeRequest
-            {
-                recover = repository.IsRecovering(this),
-                token = subscriptionToken,
-                channel = Channel,
-                offset = Offset,
-            };
         }
 
         internal void OnError(string reason)

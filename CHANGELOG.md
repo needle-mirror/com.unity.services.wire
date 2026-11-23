@@ -4,6 +4,21 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-11-23
+
+### Changed
+
+- Wire no longer reconnects automatically when the server closes the connection with a code meaning it will keep refusing the client (bad request, connection or channel limit, forced disconnect, unsupported protocol). Calls waiting on the connection fail with a `ConnectionFailedException`, and subscribed channels move to the error state, instead.
+- `CentrifugeCloseCode` values now match the close codes the server sends on protocol v2 (for example `InvalidToken` is 3500 and `ForceNoReconnect` is 3503), and `NoPong`, `InappropriateProtocol` and `TokenVerificationFailed` are added.
+- When the server rejects the access token, Wire now reconnects as soon as Authentication issues a new token instead of retrying the rejected one.
+- When the server ends a channel subscription with a code that asks the client to subscribe again (for example because its token expired), Wire subscribes again instead of dropping the channel.
+
+### Fixed
+
+- Fixed real-time updates (Lobby events, Cloud Code and Friends messages) stopping for a few seconds about every hour. Wire now refreshes the connection and channel tokens before they expire instead of being disconnected and reconnecting.
+- Fixed Wire reporting every server close code as `WebsocketUndefined`. This also meant the 10-second wait before reconnecting after the server failed to verify a token never applied.
+- Fixed Wire never reconnecting after the player signed out and back in while the connection was closed and waiting to reconnect.
+
 ## [1.6.2] - 2026-10-21
 
 ### Fixed
